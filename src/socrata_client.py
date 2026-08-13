@@ -28,7 +28,7 @@ def get_metadata() -> dict:
     return resp.json()
 
 
-def soql_query(select=None, where=None, group=None, order=None, limit=None) -> list:
+def soql_query(select=None, where=None, group=None, order=None, limit=None, timeout=180) -> list:
     """Run a SoQL query against the resource endpoint. Returns parsed JSON rows."""
     params = {}
     if select:
@@ -42,7 +42,7 @@ def soql_query(select=None, where=None, group=None, order=None, limit=None) -> l
     if limit:
         params["$limit"] = limit
 
-    resp = requests.get(RESOURCE_URL, headers=_headers(), params=params, timeout=60)
+    resp = requests.get(RESOURCE_URL, headers=_headers(), params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
