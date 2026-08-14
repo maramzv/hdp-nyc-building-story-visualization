@@ -19,10 +19,19 @@ MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT = 3
 # than physical defects. These recur by design (e.g. annually, for every subject
 # building) and would falsely inflate Persistent/Chronic pattern detection if not
 # excluded. Found via Phase 3 testing: 8 of 25 "Persistent" matches in an 80-building
-# sample turned out to be the same annual-filing code. This list is a starting point,
-# not exhaustive — flag any other suspiciously-uniform recurring signature the same way.
+# sample turned out to be the same annual-filing code (1507). Audited the other top-60
+# codes by citywide frequency (data/ordernumber_counts.json) for the same pattern —
+# high confidence on the first 5, moderate on the last 2 (posting/certification-type
+# obligations that plausibly recur on a compliance calendar, but not as certain as the
+# bedbug report). Not exhaustive — only the top 60 of 396 codes were reviewed.
 ADMINISTRATIVE_ORDERNUMBERS = {
-    "1507",  # "FILE ANNUAL BEDBUG REPORT IN ACCORDANCE WITH HPD RULE" - recurs yearly by design
+    "780",   # "OWNER FAILED TO FILE A VALID REGISTRATION STATEMENT" - recurs if unregistered
+    "1507",  # "FILE ANNUAL BEDBUG REPORT" - recurs yearly by design
+    "700",   # "POST A PROPER NOTICE OF SMOKE DETECTOR REQUIREMENTS" - signage, not the device
+    "1501",  # "POST A PROPER NOTICE OF CARBON MONOXIDE DETECTING DEVICE REQUIREMENTS" - signage
+    "778",   # "POST AND MAINTAIN A PROPER SIGN...SHOWING THE REGISTRATION NUMBER" - signage
+    "484",   # "PROVIDE A COMPLETED CERTIFICATE OF INSPECTION VISITS" - MDL S329 posting (moderate confidence)
+    "623",   # "CERTIFY COMPLIANCE WITH LEAD-BASED PAINT HAZARD CONTROL REQUIREMENTS" - Local Law 1 annual cert (moderate confidence)
 }
 
 
