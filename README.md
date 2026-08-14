@@ -25,13 +25,9 @@ Dataset ID: `csn4-vhvf`
 
 Queried live via the Socrata API. An app token is optional for public reads but increases the request/throttling allowance. Never commit a real token — see [Setup](#setup).
 
-## Roadmap
+## Current state
 
-1. **Data discovery** — schema, scale, date range, building identifiers, violation categories/status. No 2M-row download; aggregate queries only. → `docs/data-discovery.md`
-2. **Analytical grain** — how reliably can records be grouped into buildings?
-3. **Hypothesis testing** — test candidate patterns (recurrence, persistence, trend, concentration) against real aggregated data before assuming any are real.
-4. **Visualization build** — narrative notebook/report built around whichever patterns actually held up.
-5. **Write-up** — `docs/visualization-findings.md`, summarizing what the data supports.
+**→ See `docs/project-map.md` for the up-to-date architecture diagram and phase status.** It's a living snapshot (not a log) — check there for what's built, what's validated, and what's next. `docs/progress-log.md` has the full chronological history if you want the "how we got here."
 
 ## Setup
 
