@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NYC Building Stories</title>
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+<style>
+  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0b0e14; font-family: -apple-system, "Segoe UI", sans-serif; }
+  #panel {
+    position: absolute; top: 16px; left: 16px; width: 320px;
+    background: rgba(20, 22, 30, 0.92); color: #e8eaf0; border-radius: 10px;
+    padding: 16px 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    max-height: calc(100vh - 32px); overflow-y: auto;
+  }
+  #panel h1 { font-size: 16px; margin: 0 0 4px 0; }
+  #panel .sub { font-size: 12px; color: #9aa1b2; margin-bottom: 14px; }
+  #legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+  #legend .row { display: flex; align-items: center; gap: 8px; }
+  #legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  #detail { display: none; margin-top: 16px; padding-top: 14px; border-top: 1px solid #333747; }
+  #detail h2 { font-size: 14px; margin: 0 0 6px 0; }
+  #detail .addr { font-size: 12px; color: #9aa1b2; margin-bottom: 10px; }
+  #detail .narrative { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
+  #detail .dims { font-size: 11px; color: #b5bac9; display: flex; flex-direction: column; gap: 3px; }
+  #detail .dims span.k { color: #767c8c; }
+  #status { position: absolute; bottom: 16px; left: 16px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>NYC Building Stories</h1>
+  <div class="sub">Colored by recurrence pattern. Click a building for its story.</div>
+  <div id="legend"></div>
+  <div id="detail">
+    <h2 id="d-headline"></h2>
+    <div class="addr" id="d-addr"></div>
+    <div class="narrative" id="d-narrative"></div>
+    <div class="dims" id="d-dims"></div>
+  </div>
+</div>
+<div id="status">Loading building data...</div>
+
+<script>
+const PATTERN_COLORS = {
+  "Isolated":   [64, 216, 200],
+  "Persistent": [230, 180, 60],
+  "Chronic":    [220, 70, 60],
+};
+const PATTERN_LABELS = {
+  "Isolated":   "Isolated — no recurring defect found",
+  "Persistent": "Persistent — a defect has recurred",
+  "Chronic":    "Chronic — long-running recurring defect",
+};
+
+const legend = document.getElementById('legend');
+for (const [k, c] of Object.entries(PATTERN_COLORS)) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<div class="swatch" style="background: rgb(${c.join(',')})"></div><div>${PATTERN_LABELS[k]}</div>`;
+  legend.appendChild(row);
+}
+
+function showDetail(d) {
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
+  document.getElementById('d-addr').textContent = d.address + ' (BuildingID ' + d.buildingid + ')';
+  document.getElementById('d-narrative').textContent = d.narrative;
+  document.getElementById('d-dims').innerHTML = [
+    ['Active violations', d.active_count],
+    ['Recency', d.recency],
+    ['Severity', d.severity],
+    ['Engagement', d.engagement],
+    ['Backlog age', d.backlog_age],
+  ].map(([k, v]) => `<div><span class="k">${k}:</span> ${v}</div>`).join('');
+}
+
+fetch('data/map_dataset.json')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('status').textContent = data.length.toLocaleString() + ' buildings loaded';
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      center: [-73.97, 40.72],
+      zoom: 10,
+      pitch: 55,
+      bearing: -10,
+      antialias: true
+    });
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+    const layer = new deck.MapboxLayer({
+      id: 'buildings',
+      type: deck.ColumnLayer,
+      data: data,
+      diskResolution: 6,
+      radius: 18,
+      extruded: true,
+      pickable: true,
+      elevationScale: 8,
+      getPosition: d => [d.lon, d.lat],
+      getElevation: d => Math.max(d.floors, 2),
+      getFillColor: d => PATTERN_COLORS[d.pattern] || [120, 120, 120],
+      onClick: (info) => { if (info.object) showDetail(info.object); },
+    });
+
+    map.on('load', () => {
+      map.addLayer(layer);
+    });
+  })
+  .catch(err => {
+    document.getElementById('status').textContent = 'Error loading data: ' + err;
+    console.error(err);
+  });
+</script>
+</body>
+</html>

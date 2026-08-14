@@ -28,8 +28,12 @@ def get_metadata() -> dict:
     return resp.json()
 
 
-def soql_query(select=None, where=None, group=None, order=None, limit=None, timeout=180) -> list:
-    """Run a SoQL query against the resource endpoint. Returns parsed JSON rows."""
+def soql_query(select=None, where=None, group=None, order=None, limit=None, timeout=180,
+               dataset_id=None) -> list:
+    """Run a SoQL query against a Socrata resource endpoint. Returns parsed JSON rows.
+
+    Defaults to the HPD violations dataset (csn4-vhvf); pass dataset_id to query
+    a different NYC Open Data dataset (e.g. PLUTO) with the same helper."""
     params = {}
     if select:
         params["$select"] = select
@@ -42,7 +46,8 @@ def soql_query(select=None, where=None, group=None, order=None, limit=None, time
     if limit:
         params["$limit"] = limit
 
-    resp = requests.get(RESOURCE_URL, headers=_headers(), params=params, timeout=timeout)
+    url = f"https://data.cityofnewyork.us/resource/{dataset_id}.json" if dataset_id else RESOURCE_URL
+    resp = requests.get(url, headers=_headers(), params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
