@@ -6,6 +6,7 @@
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+<script src="src/building_story.js"></script>
 <style>
   html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0b0e14; font-family: -apple-system, "Segoe UI", sans-serif; }
   #panel {
@@ -163,37 +164,46 @@ for (const [k, c] of Object.entries(PATTERN_COLORS)) {
   legend.appendChild(row);
 }
 
-let EVIDENCE = {};
 let NEIGHBORHOODS_BY_NAME = {};
 const EVIDENCE_DISPLAY_LIMIT = 100; // cap DOM rows for buildings with hundreds of records
+let currentRequestId = 0; // guards against a slow earlier click overwriting a newer one
 
-function showDetail(d) {
-  document.getElementById('detail').style.display = 'block';
-  document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
-  document.getElementById('d-addr').textContent = d.address + ' (BuildingID ' + d.buildingid + ')';
-  document.getElementById('d-narrative').textContent = d.narrative;
-  document.getElementById('d-dims').innerHTML = [
-    ['Active violations', d.active_count],
-    ['Recency', d.recency],
-    ['Severity', d.severity],
-    ['Engagement', d.engagement],
-    ['Backlog age', d.backlog_age],
-  ].map(([k, v]) => `<div><span class="k">${k}:</span> ${v}</div>`).join('');
-
+function renderSimilar(buildingid, pattern, neighborhood) {
   const similarEl = document.getElementById('d-similar');
-  const nbhd = NEIGHBORHOODS_BY_NAME[d.neighborhood];
+  const nbhd = NEIGHBORHOODS_BY_NAME[neighborhood];
   if (nbhd && nbhd.total > 1) {
-    const key = d.pattern.toLowerCase();
+    const key = pattern.toLowerCase();
     const sameCount = (nbhd[key] || 0) - 1; // exclude this building itself
     similarEl.style.display = 'block';
     similarEl.textContent = sameCount > 0
-      ? `${sameCount} other building${sameCount !== 1 ? 's' : ''} analyzed in ${d.neighborhood} also show${sameCount === 1 ? 's' : ''} a ${d.pattern} pattern (of ${nbhd.total - 1} others sampled here).`
-      : `No other sampled buildings in ${d.neighborhood} show this pattern (of ${nbhd.total - 1} others sampled here).`;
+      ? `${sameCount} other building${sameCount !== 1 ? 's' : ''} analyzed in ${neighborhood} also show${sameCount === 1 ? 's' : ''} a ${pattern} pattern (of ${nbhd.total - 1} others sampled here).`
+      : `No other sampled buildings in ${neighborhood} show this pattern (of ${nbhd.total - 1} others sampled here).`;
   } else {
     similarEl.style.display = 'none';
   }
+}
 
-  const records = EVIDENCE[d.buildingid] || [];
+function buildEvidenceFromRecords(records) {
+  const seen = new Set();
+  const trimmed = [];
+  for (const v of records) {
+    let desc = (v.novdescription || '').trim();
+    if (desc.length > 140) {
+      const cut = desc.slice(0, 140);
+      desc = cut.slice(0, cut.lastIndexOf(' ')) + '...';
+    }
+    const date = v.novissueddate ? v.novissueddate.slice(0, 10) : null;
+    const key = `${date}|${v.class}|${desc}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      trimmed.push({ date, class: v.class, status: v.currentstatus, description: desc });
+    }
+  }
+  trimmed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return trimmed;
+}
+
+function renderEvidence(records) {
   const countEl = document.getElementById('evidence-count');
   const tableEl = document.getElementById('evidence-table');
   countEl.textContent = `(${records.length} record${records.length !== 1 ? 's' : ''})`;
@@ -206,8 +216,57 @@ function showDetail(d) {
     </div>`).join('') +
     (records.length > EVIDENCE_DISPLAY_LIMIT
       ? `<div id="evidence-more">showing ${EVIDENCE_DISPLAY_LIMIT} of ${records.length} records</div>` : '');
-
   document.getElementById('evidence-toggle').onclick = () => tableEl.classList.toggle('open');
+}
+
+/** d = the lightweight, batch-computed dot data (position/pattern/scale/neighborhood).
+ * Shows that immediately for instant feedback, then fetches this ONE building's real
+ * records live from NYC's API and replaces the narrative/dims/evidence once it resolves. */
+function showDetail(d) {
+  const myRequestId = ++currentRequestId;
+
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
+  document.getElementById('d-addr').textContent = d.address + ' (BuildingID ' + d.buildingid + ')';
+  document.getElementById('d-narrative').textContent = 'Loading live data from NYC Open Data...';
+  document.getElementById('d-dims').innerHTML = '';
+  renderSimilar(d.buildingid, d.pattern, d.neighborhood);
+  document.getElementById('evidence-count').textContent = '';
+  document.getElementById('evidence-table').innerHTML = '';
+
+  const url = `https://data.cityofnewyork.us/resource/csn4-vhvf.json?$where=buildingid='${d.buildingid}'&$limit=5000`;
+  fetch(url)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    })
+    .then(records => {
+      if (myRequestId !== currentRequestId) return; // a newer click already superseded this one
+      if (!records.length) {
+        document.getElementById('d-narrative').textContent = 'No live records returned for this building right now.';
+        return;
+      }
+      const profile = buildProfile(d.buildingid, records, new Date());
+      const narrative = generateNarrative(profile);
+
+      document.getElementById('d-headline').textContent = profile.pattern + ' · ' + profile.scale + ' scale';
+      document.getElementById('d-narrative').textContent = narrative;
+      document.getElementById('d-dims').innerHTML = [
+        ['Active violations', profile.active_count],
+        ['Recency', profile.recency],
+        ['Severity', profile.severity],
+        ['Engagement', profile.engagement],
+        ['Backlog age', profile.backlog_age],
+      ].map(([k, v]) => `<div><span class="k">${k}:</span> ${v}</div>`).join('');
+
+      renderEvidence(buildEvidenceFromRecords(records));
+    })
+    .catch(err => {
+      if (myRequestId !== currentRequestId) return;
+      document.getElementById('d-narrative').textContent =
+        'Live lookup failed or timed out (NYC\'s API can occasionally be slow) — try clicking this building again.';
+      console.error('Live building lookup failed:', err);
+    });
 }
 
 const BORO_CENTERS = {
@@ -334,10 +393,8 @@ function renderSearch(data, map) {
 Promise.all([
   fetch('data/map_dataset.json').then(r => r.json()),
   fetch('data/neighborhoods.json').then(r => r.json()),
-  fetch('data/building_evidence.json').then(r => r.json()),
 ])
-  .then(([data, neighborhoods, evidence]) => {
-    EVIDENCE = evidence;
+  .then(([data, neighborhoods]) => {
     for (const n of neighborhoods) {
       NEIGHBORHOODS_BY_NAME[n.neighborhood] = n;
     }
