@@ -123,6 +123,7 @@ def main():
         output.append({
             "buildingid": bid,
             "address": p.address,
+            "boro": by_building[bid][0].get("boro", ""),
             "lat": lat,
             "lon": lon,
             "floors": floors,

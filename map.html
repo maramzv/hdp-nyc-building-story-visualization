@@ -10,8 +10,9 @@
   html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0b0e14; font-family: -apple-system, "Segoe UI", sans-serif; }
   #panel {
     position: absolute; top: 16px; left: 16px; width: 320px;
-    background: rgba(20, 22, 30, 0.92); color: #e8eaf0; border-radius: 10px;
-    padding: 16px 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    background: rgba(18, 20, 28, 0.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    color: #e8eaf0; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);
+    padding: 16px 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
     max-height: calc(100vh - 32px); overflow-y: auto;
   }
   #panel h1 { font-size: 16px; margin: 0 0 4px 0; }
@@ -19,13 +20,91 @@
   #legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
   #legend .row { display: flex; align-items: center; gap: 8px; }
   #legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  #search-wrap { position: relative; margin-top: 12px; }
+  #search-box {
+    width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    color: #e8eaf0; font-size: 12px; padding: 9px 11px; border-radius: 7px; outline: none;
+  }
+  #search-box:focus { border-color: rgba(255,255,255,0.3); }
+  #search-box::placeholder { color: #6c7180; }
+  #search-results {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 5;
+    background: #14161e; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5); max-height: 220px; overflow-y: auto;
+  }
+  #search-results.open { display: block; }
+  .search-result { padding: 9px 11px; font-size: 11px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .search-result:hover { background: rgba(255,255,255,0.06); }
+  .search-result span:first-child { color: #d0d3dd; }
+  #summary { margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; font-size: 12px; color: #b5bac9; }
+  #summary .big { font-size: 22px; color: #fff; font-weight: 600; }
+  #boroughs { margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; }
+  #boroughs h3 { font-size: 12px; margin: 0 0 10px 0; color: #9aa1b2; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+  .boro-row { margin-bottom: 10px; cursor: pointer; }
+  .boro-row:hover .boro-name { color: #fff; }
+  .boro-name { font-size: 12px; color: #d0d3dd; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .boro-name .n { color: #767c8c; }
+  .boro-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1a1d27; }
+  .boro-bar div { height: 100%; }
   #detail { display: none; margin-top: 16px; padding-top: 14px; border-top: 1px solid #333747; }
   #detail h2 { font-size: 14px; margin: 0 0 6px 0; }
   #detail .addr { font-size: 12px; color: #9aa1b2; margin-bottom: 10px; }
   #detail .narrative { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
   #detail .dims { font-size: 11px; color: #b5bac9; display: flex; flex-direction: column; gap: 3px; }
   #detail .dims span.k { color: #767c8c; }
+  .similar { font-size: 11.5px; color: #9aa1b2; margin-top: 10px; padding: 8px 10px; background: rgba(255,255,255,0.04); border-radius: 6px; line-height: 1.4; }
+  #evidence-toggle {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid #333747;
+    font-size: 12px; color: #9aa1b2; cursor: pointer; user-select: none;
+  }
+  #evidence-toggle:hover { color: #fff; }
+  #evidence-count { color: #666c7c; }
+  #evidence-table { display: none; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  #evidence-table.open { display: block; }
+  .ev-row { font-size: 11px; padding: 7px 0; border-bottom: 1px solid #23273499; }
+  .ev-row .ev-top { display: flex; justify-content: space-between; color: #8a90a0; margin-bottom: 2px; }
+  .ev-row .ev-class-C { color: #e67a6e; font-weight: 600; }
+  .ev-row .ev-desc { color: #c4c7d1; line-height: 1.4; }
+  #evidence-more { font-size: 10.5px; color: #666c7c; padding-top: 6px; text-align: center; }
   #status { position: absolute; bottom: 16px; left: 16px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; }
+  #tooltip {
+    position: absolute; display: none; pointer-events: none; z-index: 10;
+    background: rgba(15, 16, 22, 0.95); color: #e8eaf0; font-size: 12px;
+    padding: 8px 11px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4); max-width: 220px;
+  }
+  #tooltip .t-addr { font-weight: 600; margin-bottom: 2px; }
+  #tooltip .t-pattern { color: #9aa1b2; }
+  .nbhd-list { display: none; margin: 6px 0 4px 10px; border-left: 1px solid #333747; padding-left: 10px; }
+  .nbhd-list.open { display: block; }
+  .nbhd-row { margin-bottom: 7px; cursor: pointer; }
+  .nbhd-name { font-size: 11px; color: #b0b4c2; margin-bottom: 3px; display: flex; justify-content: space-between; }
+  .nbhd-row:hover .nbhd-name { color: #fff; }
+  .nbhd-name .n { color: #666c7c; }
+  .nbhd-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #1a1d27; }
+  .nbhd-bar div { height: 100%; }
+  .boro-name .caret { color: #666c7c; margin-right: 4px; transition: transform 0.15s; display: inline-block; }
+  .boro-row.open .caret { transform: rotate(90deg); }
+
+  #landing {
+    position: absolute; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, #161a24 0%, #0b0e14 100%);
+  }
+  #landing .content { max-width: 560px; text-align: center; padding: 0 24px; color: #e8eaf0; }
+  #landing h1 { font-size: 34px; margin: 0 0 12px 0; font-weight: 700; letter-spacing: -0.01em; }
+  #landing .tagline { font-size: 15px; color: #9aa1b2; margin-bottom: 28px; line-height: 1.6; }
+  #landing .stats { display: flex; justify-content: center; gap: 28px; margin-bottom: 32px; }
+  #landing .stat .num { font-size: 26px; font-weight: 700; }
+  #landing .stat .lbl { font-size: 11px; color: #8a90a0; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 3px; }
+  #landing .legend-row { display: flex; justify-content: center; gap: 18px; margin-bottom: 32px; font-size: 12px; color: #b0b4c2; }
+  #landing .legend-row .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+  #landing button {
+    background: #e8eaf0; color: #0b0e14; border: none; padding: 13px 32px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: transform 0.15s, opacity 0.15s;
+  }
+  #landing button:hover { transform: translateY(-1px); opacity: 0.9; }
+  #landing .hint { font-size: 11px; color: #666c7c; margin-top: 14px; }
+  #landing.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -34,14 +113,35 @@
   <h1>NYC Building Stories</h1>
   <div class="sub">Colored by recurrence pattern. Click a building for its story.</div>
   <div id="legend"></div>
+  <div id="search-wrap">
+    <input id="search-box" type="text" placeholder="Search a loaded address..." autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div id="summary"></div>
+  <div id="boroughs"></div>
   <div id="detail">
     <h2 id="d-headline"></h2>
     <div class="addr" id="d-addr"></div>
     <div class="narrative" id="d-narrative"></div>
     <div class="dims" id="d-dims"></div>
+    <div class="similar" id="d-similar"></div>
+    <div id="evidence-toggle">Why we're saying this &rarr; <span id="evidence-count"></span></div>
+    <div id="evidence-table"></div>
   </div>
 </div>
 <div id="status">Loading building data...</div>
+<div id="tooltip"></div>
+
+<div id="landing">
+  <div class="content">
+    <h1>What is happening to NYC's buildings?</h1>
+    <div class="tagline">Every colored column is a real NYC building with at least one open housing violation on record. Explore the stories hidden in the city's housing records — from the citywide pattern down to a single address.</div>
+    <div class="stats" id="landing-stats"></div>
+    <div class="legend-row" id="landing-legend"></div>
+    <button id="landing-enter">Explore the map</button>
+    <div class="hint">Click a borough, then a neighborhood, then a building — or just fly around.</div>
+  </div>
+</div>
 
 <script>
 const PATTERN_COLORS = {
@@ -63,6 +163,10 @@ for (const [k, c] of Object.entries(PATTERN_COLORS)) {
   legend.appendChild(row);
 }
 
+let EVIDENCE = {};
+let NEIGHBORHOODS_BY_NAME = {};
+const EVIDENCE_DISPLAY_LIMIT = 100; // cap DOM rows for buildings with hundreds of records
+
 function showDetail(d) {
   document.getElementById('detail').style.display = 'block';
   document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
@@ -75,37 +179,218 @@ function showDetail(d) {
     ['Engagement', d.engagement],
     ['Backlog age', d.backlog_age],
   ].map(([k, v]) => `<div><span class="k">${k}:</span> ${v}</div>`).join('');
+
+  const similarEl = document.getElementById('d-similar');
+  const nbhd = NEIGHBORHOODS_BY_NAME[d.neighborhood];
+  if (nbhd && nbhd.total > 1) {
+    const key = d.pattern.toLowerCase();
+    const sameCount = (nbhd[key] || 0) - 1; // exclude this building itself
+    similarEl.style.display = 'block';
+    similarEl.textContent = sameCount > 0
+      ? `${sameCount} other building${sameCount !== 1 ? 's' : ''} analyzed in ${d.neighborhood} also show${sameCount === 1 ? 's' : ''} a ${d.pattern} pattern (of ${nbhd.total - 1} others sampled here).`
+      : `No other sampled buildings in ${d.neighborhood} show this pattern (of ${nbhd.total - 1} others sampled here).`;
+  } else {
+    similarEl.style.display = 'none';
+  }
+
+  const records = EVIDENCE[d.buildingid] || [];
+  const countEl = document.getElementById('evidence-count');
+  const tableEl = document.getElementById('evidence-table');
+  countEl.textContent = `(${records.length} record${records.length !== 1 ? 's' : ''})`;
+  tableEl.classList.remove('open');
+  const shown = records.slice(0, EVIDENCE_DISPLAY_LIMIT);
+  tableEl.innerHTML = shown.map(r => `
+    <div class="ev-row">
+      <div class="ev-top"><span class="${r.class === 'C' ? 'ev-class-C' : ''}">${r.date || 'no date'} · Class ${r.class || '?'}</span><span>${r.status || ''}</span></div>
+      <div class="ev-desc">${r.description || ''}</div>
+    </div>`).join('') +
+    (records.length > EVIDENCE_DISPLAY_LIMIT
+      ? `<div id="evidence-more">showing ${EVIDENCE_DISPLAY_LIMIT} of ${records.length} records</div>` : '');
+
+  document.getElementById('evidence-toggle').onclick = () => tableEl.classList.toggle('open');
 }
 
-fetch('data/map_dataset.json')
-  .then(r => r.json())
-  .then(data => {
+const BORO_CENTERS = {
+  "MANHATTAN":     { center: [-73.9712, 40.7831], zoom: 12.5 },
+  "BRONX":         { center: [-73.8648, 40.8448], zoom: 11.5 },
+  "BROOKLYN":      { center: [-73.9442, 40.6782], zoom: 11.5 },
+  "QUEENS":        { center: [-73.7949, 40.7282], zoom: 11 },
+  "STATEN ISLAND": { center: [-74.1502, 40.5795], zoom: 11.5 },
+};
+const PATTERN_ORDER = ["Isolated", "Persistent", "Chronic"];
+
+function renderSummary(data) {
+  const counts = { Isolated: 0, Persistent: 0, Chronic: 0 };
+  for (const d of data) counts[d.pattern] = (counts[d.pattern] || 0) + 1;
+  const pctChronic = ((counts.Chronic / data.length) * 100).toFixed(1);
+  document.getElementById('summary').innerHTML = `
+    <div class="big">${data.length.toLocaleString()}</div>
+    buildings analyzed &middot; ${pctChronic}% show a chronic recurring pattern`;
+}
+
+function patternBar(counts, total) {
+  return PATTERN_ORDER.map(p => {
+    const pct = total ? (counts[p] || 0) / total * 100 : 0;
+    const color = PATTERN_COLORS[p];
+    return `<div style="width:${pct}%; background: rgb(${color.join(',')})"></div>`;
+  }).join('');
+}
+
+function renderBoroughs(data, neighborhoods, map) {
+  const byBoro = {};
+  for (const d of data) {
+    if (!d.boro) continue;
+    byBoro[d.boro] = byBoro[d.boro] || { Isolated: 0, Persistent: 0, Chronic: 0, total: 0 };
+    byBoro[d.boro][d.pattern] = (byBoro[d.boro][d.pattern] || 0) + 1;
+    byBoro[d.boro].total += 1;
+  }
+  const container = document.getElementById('boroughs');
+  container.innerHTML = '<h3>City &rarr; borough &rarr; neighborhood &rarr; building</h3>';
+  const order = ["BROOKLYN", "BRONX", "QUEENS", "MANHATTAN", "STATEN ISLAND"];
+  for (const boro of order) {
+    const c = byBoro[boro];
+    if (!c) continue;
+    const displayName = boro.charAt(0) + boro.slice(1).toLowerCase();
+    const row = document.createElement('div');
+    row.className = 'boro-row';
+    row.innerHTML = `
+      <div class="boro-name"><span><span class="caret">&#9656;</span>${displayName}</span><span class="n">${c.total}</span></div>
+      <div class="boro-bar">${patternBar(c, c.total)}</div>
+      <div class="nbhd-list"></div>`;
+
+    const nbhdListEl = row.querySelector('.nbhd-list');
+    let expanded = false;
+
+    row.querySelector('.boro-name').onclick = () => {
+      const target = BORO_CENTERS[boro];
+      if (target) map.flyTo({ center: target.center, zoom: target.zoom, pitch: 55, duration: 1500 });
+
+      expanded = !expanded;
+      row.classList.toggle('open', expanded);
+      nbhdListEl.classList.toggle('open', expanded);
+      if (expanded && !nbhdListEl.dataset.built) {
+        nbhdListEl.dataset.built = '1';
+        const boroNbhds = neighborhoods
+          .filter(n => n.boro === boro)
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 8); // top 8 by building count, keeps the panel readable
+        for (const n of boroNbhds) {
+          const nRow = document.createElement('div');
+          nRow.className = 'nbhd-row';
+          const nCounts = { Isolated: n.isolated, Persistent: n.persistent, Chronic: n.chronic };
+          nRow.innerHTML = `
+            <div class="nbhd-name"><span>${n.neighborhood}</span><span class="n">${n.total}</span></div>
+            <div class="nbhd-bar">${patternBar(nCounts, n.total)}</div>`;
+          nRow.onclick = (e) => {
+            e.stopPropagation();
+            map.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
+          };
+          nbhdListEl.appendChild(nRow);
+        }
+      }
+    };
+    container.appendChild(row);
+  }
+}
+
+function renderLanding(data) {
+  const counts = { Isolated: 0, Persistent: 0, Chronic: 0 };
+  for (const d of data) counts[d.pattern] = (counts[d.pattern] || 0) + 1;
+  document.getElementById('landing-stats').innerHTML = PATTERN_ORDER.map(p => `
+    <div class="stat">
+      <div class="num" style="color: rgb(${PATTERN_COLORS[p].join(',')})">${((counts[p]/data.length)*100).toFixed(1)}%</div>
+      <div class="lbl">${p}</div>
+    </div>`).join('');
+  document.getElementById('landing-legend').innerHTML = PATTERN_ORDER.map(p =>
+    `<span><span class="sw" style="background: rgb(${PATTERN_COLORS[p].join(',')})"></span>${PATTERN_LABELS[p]}</span>`
+  ).join('');
+}
+
+function renderSearch(data, map) {
+  const box = document.getElementById('search-box');
+  const results = document.getElementById('search-results');
+  box.addEventListener('input', () => {
+    const q = box.value.trim().toUpperCase();
+    results.innerHTML = '';
+    if (q.length < 3) { results.classList.remove('open'); return; }
+    const matches = data.filter(d => d.address.toUpperCase().includes(q)).slice(0, 8);
+    if (!matches.length) { results.classList.remove('open'); return; }
+    results.classList.add('open');
+    for (const m of matches) {
+      const row = document.createElement('div');
+      row.className = 'search-result';
+      row.innerHTML = `<span>${m.address}</span><span class="n" style="color: rgb(${PATTERN_COLORS[m.pattern].join(',')})">${m.pattern}</span>`;
+      row.onclick = () => {
+        map.flyTo({ center: [m.lon, m.lat], zoom: 17, pitch: 60, duration: 1800 });
+        showDetail(m);
+        results.classList.remove('open');
+        box.value = m.address;
+      };
+      results.appendChild(row);
+    }
+  });
+}
+
+Promise.all([
+  fetch('data/map_dataset.json').then(r => r.json()),
+  fetch('data/neighborhoods.json').then(r => r.json()),
+  fetch('data/building_evidence.json').then(r => r.json()),
+])
+  .then(([data, neighborhoods, evidence]) => {
+    EVIDENCE = evidence;
+    for (const n of neighborhoods) {
+      NEIGHBORHOODS_BY_NAME[n.neighborhood] = n;
+    }
+    window.__TEST_DATA__ = data; // temporary hook for automated testing
     document.getElementById('status').textContent = data.length.toLocaleString() + ' buildings loaded';
+    renderSummary(data);
+    renderLanding(data);
 
     const map = new maplibregl.Map({
       container: 'map',
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
       center: [-73.97, 40.72],
-      zoom: 10,
-      pitch: 55,
-      bearing: -10,
+      zoom: 8.5,
+      pitch: 0,
+      bearing: 0,
       antialias: true
     });
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    window.__TEST_MAP__ = map; // temporary hook for automated testing
+    renderBoroughs(data, neighborhoods, map);
+    renderSearch(data, map);
+
+    document.getElementById('landing-enter').onclick = () => {
+      document.getElementById('landing').classList.add('hidden');
+      map.flyTo({ center: [-73.97, 40.72], zoom: 10, pitch: 55, bearing: -10, duration: 3500 });
+    };
+
+    const tooltip = document.getElementById('tooltip');
 
     const layer = new deck.MapboxLayer({
       id: 'buildings',
       type: deck.ColumnLayer,
       data: data,
-      diskResolution: 6,
-      radius: 18,
+      diskResolution: 8,
+      radius: 20,
       extruded: true,
       pickable: true,
       elevationScale: 8,
+      material: { ambient: 0.35, diffuse: 0.65, shininess: 28, specularColor: [255, 255, 255] },
       getPosition: d => [d.lon, d.lat],
       getElevation: d => Math.max(d.floors, 2),
       getFillColor: d => PATTERN_COLORS[d.pattern] || [120, 120, 120],
       onClick: (info) => { if (info.object) showDetail(info.object); },
+      onHover: (info) => {
+        if (info.object) {
+          tooltip.style.display = 'block';
+          tooltip.style.left = (info.x + 14) + 'px';
+          tooltip.style.top = (info.y + 10) + 'px';
+          tooltip.innerHTML = `<div class="t-addr">${info.object.address}</div><div class="t-pattern">${info.object.pattern} · ${info.object.active_count} active</div>`;
+        } else {
+          tooltip.style.display = 'none';
+        }
+      },
     });
 
     map.on('load', () => {
