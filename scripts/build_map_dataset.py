@@ -1,9 +1,10 @@
 """Phase 4, step 1: build the dataset that feeds the 3D map visualization.
 
-1. Randomly sample ~3,000 buildings from the full citywide list (uniform
-   random over all 167,857 buildings, not weighted toward high-violation
-   ones - gives a geographically representative sample, not just the
-   troubled outliers we've been testing against).
+1. Take every building citywide that has at least one open HPD violation
+   (~167,857 buildings - the full population, not a sample). IDs are
+   shuffled with a fixed seed before batching so buildings with very high
+   violation counts (some have 2,000+) get spread evenly across batches
+   instead of clustering and risking the per-query row cap.
 2. Pull their violation records (batched - too many buildingids for one
    query) and compute each one's six-dimension story profile.
 3. Join each building to PLUTO (NYC's tax-lot dataset) for lat/lon and
@@ -11,6 +12,10 @@
    rate in Phase 3 testing).
 4. Export one JSON file: one row per successfully-profiled, successfully-
    located building, ready for the deck.gl/MapLibre frontend to read directly.
+
+The violation pull is checkpointed batch-by-batch to a .jsonl file so a
+30-60+ minute run can be killed and resumed without re-fetching completed
+batches - see PARTIAL_PATH/PROGRESS_PATH below.
 
 Run: python scripts/build_map_dataset.py
 """
@@ -28,10 +33,20 @@ from building_story import build_profile, generate_narrative  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TODAY = datetime(2026, 8, 14)
-SAMPLE_SIZE = 3000
 BATCH_SIZE = 250
 PLUTO_DATASET_ID = "64uk-42ks"
 BORO_MAP = {"MANHATTAN": "MN", "BRONX": "BX", "BROOKLYN": "BK", "QUEENS": "QN", "STATEN ISLAND": "SI"}
+
+# Only the fields build_profile(), the PLUTO join, and the final assembly
+# actually use - trimming the rest keeps the full ~2.9M-row cache manageable
+# in memory and on disk (select="*" on the wire is unchanged; this just
+# drops unused columns before caching).
+NEEDED_FIELDS = [
+    "buildingid", "boro", "housenumber", "streetname", "apartment",
+    "novdescription", "novissueddate", "class", "currentstatus",
+    "newcorrectbydate", "originalcorrectbydate", "ordernumber", "novid",
+    "block", "lot",
+]
 
 
 def chunked(lst, n):
@@ -39,28 +54,68 @@ def chunked(lst, n):
         yield lst[i:i + n]
 
 
+def query_with_retry(retries=5, backoff=3.0, **kwargs):
+    """soql_query wrapper that retries transient network failures (seen in
+    practice: connection resets from NYC's API partway through an 840-batch
+    PLUTO join) instead of letting one blip kill a 60-90 minute run."""
+    for attempt in range(retries):
+        try:
+            return soql_query(**kwargs)
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = backoff * (2 ** attempt)
+            print(f"    request failed ({e.__class__.__name__}: {e}), "
+                  f"retrying in {wait:.0f}s...")
+            time.sleep(wait)
+
+
 def main():
-    random.seed(42)  # reproducible sample
+    random.seed(42)  # reproducible shuffle
 
     cache_path = DATA_DIR / "map_dataset_violations_raw.json"
+    partial_path = DATA_DIR / "map_dataset_violations_raw.partial.jsonl"
+    progress_path = DATA_DIR / "map_dataset_violations_raw.progress.json"
+
     if cache_path.exists():
         all_rows = json.load(open(cache_path))
         print(f"Loaded {len(all_rows)} violation rows from cache (skipping re-pull)")
     else:
         cal = json.load(open(DATA_DIR / "threshold_calibration_raw.json"))
         all_ids = [r["buildingid"] for r in cal["violations_per_building"]]
-        sample_ids = random.sample(all_ids, SAMPLE_SIZE)
-        print(f"Sampled {len(sample_ids)} buildings from {len(all_ids)} citywide")
+        random.shuffle(all_ids)
+        batches = list(chunked(all_ids, BATCH_SIZE))
+        print(f"Pulling violations for all {len(all_ids)} citywide buildings "
+              f"with an open violation, in {len(batches)} batches")
 
-        all_rows = []
-        for i, batch in enumerate(chunked(sample_ids, BATCH_SIZE)):
-            where = "buildingid IN(" + ",".join(f"'{b}'" for b in batch) + ")"
-            start = time.time()
-            rows = soql_query(select="*", where=where, limit=20000, timeout=180)
-            print(f"  batch {i+1}: {time.time()-start:.1f}s, {len(rows)} rows"
-                  f"{' WARNING near limit' if len(rows) > 19000 else ''}")
-            all_rows.extend(rows)
+        start_batch = 0
+        if progress_path.exists() and partial_path.exists():
+            start_batch = json.load(open(progress_path))["completed_batches"]
+            print(f"Resuming from batch {start_batch+1}/{len(batches)} "
+                  f"(found existing checkpoint)")
+
+        with open(partial_path, "a" if start_batch else "w") as pf:
+            for i in range(start_batch, len(batches)):
+                batch = batches[i]
+                where = "buildingid IN(" + ",".join(f"'{b}'" for b in batch) + ")"
+                start = time.time()
+                rows = query_with_retry(select="*", where=where, limit=20000, timeout=180)
+                elapsed = time.time() - start
+                if len(rows) >= 19000:
+                    print(f"  batch {i+1}: WARNING {len(rows)} rows, near the "
+                          f"20000 row limit - possible truncation")
+                for r in rows:
+                    pf.write(json.dumps({k: r.get(k) for k in NEEDED_FIELDS}) + "\n")
+                pf.flush()
+                json.dump({"completed_batches": i + 1, "total_batches": len(batches)},
+                           open(progress_path, "w"))
+                if (i + 1) % 10 == 0 or i == len(batches) - 1:
+                    print(f"  batch {i+1}/{len(batches)}: {elapsed:.1f}s, {len(rows)} rows")
+
+        all_rows = [json.loads(line) for line in open(partial_path)]
         json.dump(all_rows, open(cache_path, "w"))
+        partial_path.unlink()
+        progress_path.unlink()
     print(f"Total violation rows: {len(all_rows)}")
 
     by_building = defaultdict(list)
@@ -85,18 +140,40 @@ def main():
             building_loc[bid] = (boro, block, lot)
 
     loc_items = list(building_loc.items())
+    pluto_partial_path = DATA_DIR / "map_dataset_pluto_raw.partial.jsonl"
+    pluto_progress_path = DATA_DIR / "map_dataset_pluto_raw.progress.json"
+    pluto_batches = list(chunked(loc_items, 200))
+
+    pluto_start_batch = 0
+    if pluto_progress_path.exists() and pluto_partial_path.exists():
+        pluto_start_batch = json.load(open(pluto_progress_path))["completed_batches"]
+        print(f"Resuming PLUTO join from batch {pluto_start_batch+1}/{len(pluto_batches)} "
+              f"(found existing checkpoint)")
+
+    with open(pluto_partial_path, "a" if pluto_start_batch else "w") as pf:
+        for i in range(pluto_start_batch, len(pluto_batches)):
+            batch = pluto_batches[i]
+            clauses = " OR ".join(f"(borough='{boro}' AND block={block} AND lot={lot})"
+                                   for _, (boro, block, lot) in batch)
+            start = time.time()
+            rows = query_with_retry(select="borough,block,lot,latitude,longitude,numfloors,bldgarea",
+                                     where=clauses, limit=500, timeout=120, dataset_id=PLUTO_DATASET_ID)
+            if (i + 1) % 20 == 0 or i == len(pluto_batches) - 1:
+                print(f"  pluto batch {i+1}/{len(pluto_batches)}: {time.time()-start:.1f}s, {len(rows)} rows")
+            for r in rows:
+                pf.write(json.dumps(r) + "\n")
+            pf.flush()
+            json.dump({"completed_batches": i + 1, "total_batches": len(pluto_batches)},
+                       open(pluto_progress_path, "w"))
+
     pluto_matches = {}  # (boro, block, lot) -> pluto row
-    for i, batch in enumerate(chunked(loc_items, 200)):
-        clauses = " OR ".join(f"(borough='{boro}' AND block={block} AND lot={lot})"
-                               for _, (boro, block, lot) in batch)
-        start = time.time()
-        rows = soql_query(select="borough,block,lot,latitude,longitude,numfloors,bldgarea",
-                           where=clauses, limit=500, timeout=120, dataset_id=PLUTO_DATASET_ID)
-        print(f"  pluto batch {i+1}: {time.time()-start:.1f}s, {len(rows)} rows")
-        for r in rows:
-            key = (r["borough"], str(r["block"]), str(r["lot"]))
-            if key not in pluto_matches:
-                pluto_matches[key] = r
+    for line in open(pluto_partial_path):
+        r = json.loads(line)
+        key = (r["borough"], str(r["block"]), str(r["lot"]))
+        if key not in pluto_matches:
+            pluto_matches[key] = r
+    pluto_partial_path.unlink()
+    pluto_progress_path.unlink()
 
     matched = 0
     for bid, (boro, block, lot) in building_loc.items():

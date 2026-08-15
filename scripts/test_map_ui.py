@@ -46,7 +46,11 @@ def main():
         check("landing hidden after click", not page.locator("#landing").is_visible())
 
         print("\nFlow 3-4: Borough click expands neighborhoods; neighborhood click doesn't error")
-        page.wait_for_selector(".boro-row", timeout=10000)
+        # Timeout bumped from 10000: at full scale (167k buildings) the initial
+        # deck.gl WebGL layer construction competes for the main thread and can
+        # delay Playwright's own visibility polling even after the element is
+        # actually visible.
+        page.wait_for_selector(".boro-row", timeout=25000)
         first_boro = page.locator(".boro-row").first
         first_boro.locator(".boro-name").click()
         page.wait_for_timeout(300)
@@ -57,7 +61,8 @@ def main():
             nbhd_rows.first.click()
             page.wait_for_timeout(300)
 
-        print("\nFlow 5-6: Programmatically open a building's detail + evidence + similar-buildings")
+        print("\nFlow 5-6: Click a building - triggers a REAL live fetch to NYC's API, "
+              "computes the story client-side, and shows evidence + similar-buildings")
         test_data = page.evaluate("window.__TEST_DATA__ ? window.__TEST_DATA__.length : 0")
         check("test data hook populated", test_data > 0, f"len={test_data}")
         # Find a building with active_count > 1 so the evidence table has something to show
@@ -68,14 +73,22 @@ def main():
                 return withEvidence;
             }
         """)
-        page.wait_for_timeout(200)
-        check("detail panel visible", page.locator("#detail").is_visible())
+        check("detail panel visible immediately (batch data)", page.locator("#detail").is_visible())
+        check("shows loading state while live fetch is in flight",
+              "Loading" in page.locator("#d-narrative").inner_text())
+        # Wait for the REAL network round-trip to NYC's API to resolve (not a fixed sleep -
+        # poll until the placeholder text is gone, with a generous timeout since NYC's API
+        # has been observed to be occasionally slow)
+        page.wait_for_function(
+            "() => !document.getElementById('d-narrative').textContent.includes('Loading')",
+            timeout=15000,
+        )
         headline = page.locator("#d-headline").inner_text()
-        check("headline matches pattern", sample["pattern"] in headline, headline)
+        check("headline matches pattern (live-confirmed)", sample["pattern"] in headline, headline)
         narrative = page.locator("#d-narrative").inner_text()
-        check("narrative populated", len(narrative) > 10, narrative)
+        check("live narrative populated", len(narrative) > 10 and "failed" not in narrative.lower(), narrative)
         ev_count_text = page.locator("#evidence-count").inner_text()
-        check("evidence count shown", "record" in ev_count_text, ev_count_text)
+        check("live evidence count shown", "record" in ev_count_text, ev_count_text)
 
         page.click("#evidence-toggle")
         page.wait_for_timeout(200)
@@ -96,10 +109,10 @@ def main():
                 return t;
             }
         """)
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(800)  # extra margin at 167k-building scale for the layer to re-render
         box = page.locator("#map").bounding_box()
         page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(400)
         check("tooltip visible on real hover", page.locator("#tooltip").is_visible())
         tooltip_text = page.locator("#tooltip").inner_text()
         check("tooltip shows the hovered building's own address",
@@ -107,7 +120,7 @@ def main():
         # Move away (realistic gradual movement, not an instant jump) and confirm it hides
         far_x, far_y = box["x"] + box["width"] - 20, box["y"] + box["height"] - 20
         page.mouse.move(far_x, far_y, steps=10)
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(800)
         check("tooltip hides when mouse moves off a building", not page.locator("#tooltip").is_visible())
 
         print("\nFlow 8: Search box returns results and clicking one opens detail")
@@ -136,7 +149,7 @@ def main():
                 return t;
             }
         """)
-        page.wait_for_timeout(400)  # let the layer re-render at the new viewport
+        page.wait_for_timeout(800)  # let the layer re-render at the new viewport (167k buildings)
         box = page.locator("#map").bounding_box()
         center_x, center_y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         page.mouse.click(center_x, center_y)
