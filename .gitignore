@@ -7,3 +7,4 @@ venv/
 data/*.csv
 data/*.json
 !data/.gitkeep
+data/sample2983_backup/
