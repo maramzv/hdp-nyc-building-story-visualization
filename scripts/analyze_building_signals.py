@@ -7,7 +7,7 @@ configurations. Read-only against existing data; writes only to
 data/building_signals_raw.csv. Does not touch building_story.py/.js,
 map_dataset.json, or any production file.
 
-See docs/data-analysis-log.md for the analytical plan this supports.
+See local project notes for the analytical plan this supports.
 """
 import csv
 import ijson

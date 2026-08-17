@@ -8,7 +8,7 @@ data/violation_timeline_sample.json. Read-only against the live API and
 existing data/map_dataset.json (for the buildingid population to sample
 from); does not touch any production file.
 
-See docs/data-analysis-log.md for why this was needed.
+See local project notes for why this was needed.
 """
 import json
 import random

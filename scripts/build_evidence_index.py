@@ -1,7 +1,7 @@
 """Build the evidence layer: actual violation records behind each building's story.
 
 Card (map column) -> Detail (story panel) -> Evidence (this) is the 3-level
-UI design from docs/story-taxonomy.md. This closes the third level, which was
+UI design from local project notes. This closes the third level, which was
 missing: someone should be able to verify a building's story against the real
 records, not just take the generated sentence on faith.
 

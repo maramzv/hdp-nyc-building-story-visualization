@@ -3,7 +3,7 @@ and an evidence-based narrative sentence.
 
 This is the reusable version of the analysis done ad hoc in
 scripts/phase3_derive_taxonomy.py, and it's the core of the "Building Story
-Engine" from docs/story-taxonomy.md. Deterministic, rule-based — no ML.
+Engine" from local project notes. Deterministic, rule-based — no ML.
 """
 from collections import defaultdict
 from dataclasses import dataclass, field

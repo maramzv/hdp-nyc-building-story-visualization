@@ -27,16 +27,16 @@ Queried live via the Socrata API. An app token is optional for public reads but 
 
 ## Current state
 
-**→ See `docs/project-map.md` for the up-to-date architecture diagram and phase status.** It's a living snapshot (not a log) — check there for what's built, what's validated, and what's next. `docs/progress-log.md` has the full chronological history if you want the "how we got here."
+Project notes and progress logs are kept locally (not part of this repo — see Project structure below).
 
 <details>
 <summary>Original roadmap (kept for reference — see Current state above for where things actually stand now)</summary>
 
-1. **Data discovery** — schema, scale, date range, building identifiers, violation categories/status. No 2M-row download; aggregate queries only. → `docs/data-discovery.md`
+1. **Data discovery** — schema, scale, date range, building identifiers, violation categories/status. No 2M-row download; aggregate queries only.
 2. **Analytical grain** — how reliably can records be grouped into buildings?
 3. **Hypothesis testing** — test candidate patterns (recurrence, persistence, trend, concentration) against real aggregated data before assuming any are real.
 4. **Visualization build** — narrative notebook/report built around whichever patterns actually held up.
-5. **Write-up** — `docs/visualization-findings.md`, summarizing what the data supports.
+5. **Write-up** — summarizing what the data supports.
 
 </details>
 
@@ -58,7 +58,7 @@ SOCRATA_APP_TOKEN=your_token_here
 
 ```
 notebooks/   exploratory and narrative notebooks
-docs/        data-discovery.md, visualization-findings.md, methodology notes
+docs/        project notes and logs (git-ignored, kept local-only)
 src/         shared query/helper code (API client, etc.)
 data/        local cached samples (git-ignored, not the full dataset)
 ```
