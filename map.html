@@ -37,17 +37,30 @@
   .search-result { padding: 9px 11px; font-size: 11px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
   .search-result:hover { background: rgba(255,255,255,0.06); }
   .search-result span:first-child { color: #d0d3dd; }
-  #breadcrumb { font-size: 11.5px; color: #b0b4c2; margin-top: 12px; padding-top: 12px; border-top: 1px solid #333747; }
-  #search-label { margin-top: 12px; margin-bottom: 8px; }
   #boroughs { margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; }
-  #boroughs h3 { font-size: 12px; margin: 0 0 10px 0; color: #9aa1b2; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
   .boro-row { margin-bottom: 10px; cursor: pointer; }
   .boro-row:hover .boro-name { color: #fff; }
   .boro-name { font-size: 12px; color: #d0d3dd; margin-bottom: 4px; display: flex; justify-content: space-between; }
   .boro-name .n { color: #767c8c; }
   .boro-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1a1d27; }
   .boro-bar div { height: 100%; }
-  #detail { display: none; margin-top: 16px; padding-top: 14px; border-top: 1px solid #333747; }
+
+  /* Explorer/Story two-state panel: both views share the same grid cell so
+     they can slide over one another; only the active one is display:block
+     at rest (toggled in JS after the transition ends) so the hidden view's
+     height doesn't get reserved by the grid when idle. */
+  #panel-stack { position: relative; display: grid; margin-top: 12px; }
+  #panel-stack > div { grid-area: 1 / 1; transition: transform 0.32s ease, opacity 0.28s ease; }
+  #explorer-view { transform: translateX(0); opacity: 1; }
+  #story-view { display: none; transform: translateX(100%); opacity: 0; pointer-events: none; }
+  #panel-stack.show-story #explorer-view { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+  #panel-stack.show-story #story-view { transform: translateX(0); opacity: 1; pointer-events: auto; }
+
+  #back-button {
+    font-size: 12px; color: #9aa1b2; cursor: pointer; margin-bottom: 14px;
+    padding-bottom: 12px; border-bottom: 1px solid #333747; user-select: none;
+  }
+  #back-button:hover { color: #fff; }
   #detail h2 { font-size: 14px; margin: 0 0 6px 0; }
   #detail .addr { font-size: 12px; color: #9aa1b2; margin-bottom: 10px; }
   #detail .narrative { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
@@ -112,23 +125,30 @@
 <div id="map"></div>
 <div id="panel">
   <h1 id="panel-title">NYC Building Stories</h1>
-  <div class="sub">Colored by recurrence pattern.</div>
+  <div class="sub">Explore the map, click a building for details, or search an address.</div>
   <div id="legend"></div>
-  <div id="breadcrumb">Citywide</div>
-  <div class="sub" id="search-label">Click a building for its story or</div>
-  <div id="search-wrap">
-    <input id="search-box" type="text" placeholder="Search a loaded address..." autocomplete="off">
-    <div id="search-results"></div>
-  </div>
-  <div id="boroughs"></div>
-  <div id="detail">
-    <h2 id="d-headline"></h2>
-    <div class="addr" id="d-addr"></div>
-    <div class="narrative" id="d-narrative"></div>
-    <div class="dims" id="d-dims"></div>
-    <div class="similar" id="d-similar"></div>
-    <div id="evidence-toggle">Why we're saying this &rarr; <span id="evidence-count"></span></div>
-    <div id="evidence-table"></div>
+
+  <div id="panel-stack">
+    <div id="explorer-view">
+      <div id="search-wrap">
+        <input id="search-box" type="text" placeholder="Search for an address..." autocomplete="off">
+        <div id="search-results"></div>
+      </div>
+      <div id="boroughs"></div>
+    </div>
+
+    <div id="story-view">
+      <div id="back-button">&larr; Back to Directory</div>
+      <div id="detail">
+        <h2 id="d-headline"></h2>
+        <div class="addr" id="d-addr"></div>
+        <div class="narrative" id="d-narrative"></div>
+        <div class="dims" id="d-dims"></div>
+        <div class="similar" id="d-similar"></div>
+        <div id="evidence-toggle">Why we're saying this &rarr; <span id="evidence-count"></span></div>
+        <div id="evidence-table"></div>
+      </div>
+    </div>
   </div>
 </div>
 <div id="status">Loading building data...</div>
@@ -152,9 +172,9 @@ const PATTERN_COLORS = {
   "Chronic":    [220, 70, 60],
 };
 const PATTERN_LABELS = {
-  "Isolated":   "Isolated — no recurring defect found",
-  "Persistent": "Persistent — a defect has recurred",
-  "Chronic":    "Chronic — long-running recurring defect",
+  "Isolated":   "Isolated — no recurring violations",
+  "Persistent": "Persistent — a violation has recurred",
+  "Chronic":    "Chronic — long-running recurring violations",
 };
 
 const legend = document.getElementById('legend');
@@ -186,6 +206,33 @@ function markSelected(d) {
     markerLayer.setProps({ data: [{ lon: d.lon, lat: d.lat, height }] });
   }
 }
+
+// Explorer (directory) and Story (single-building) are two mutually-exclusive
+// panel states that slide over one another instead of stacking, so the panel
+// never has to show a long directory list AND a long evidence table at once.
+const SLIDE_MS = 320;
+
+function showStory(neighborhood) {
+  const panelStack = document.getElementById('panel-stack');
+  const explorerEl = document.getElementById('explorer-view');
+  const storyEl = document.getElementById('story-view');
+  document.getElementById('back-button').textContent =
+    neighborhood ? `← Back to ${neighborhood}` : '← Back to Directory';
+  storyEl.style.display = 'block';
+  requestAnimationFrame(() => panelStack.classList.add('show-story'));
+  setTimeout(() => { explorerEl.style.display = 'none'; }, SLIDE_MS);
+}
+
+function showExplorer() {
+  const panelStack = document.getElementById('panel-stack');
+  const explorerEl = document.getElementById('explorer-view');
+  const storyEl = document.getElementById('story-view');
+  explorerEl.style.display = 'block';
+  requestAnimationFrame(() => panelStack.classList.remove('show-story'));
+  setTimeout(() => { storyEl.style.display = 'none'; }, SLIDE_MS);
+}
+
+document.getElementById('back-button').onclick = showExplorer;
 
 function renderSimilar(buildingid, pattern, neighborhood) {
   const similarEl = document.getElementById('d-similar');
@@ -244,8 +291,8 @@ function renderEvidence(records) {
 function showDetail(d) {
   const myRequestId = ++currentRequestId;
   markSelected(d);
+  showStory(d.neighborhood);
 
-  document.getElementById('detail').style.display = 'block';
   document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
   document.getElementById('d-addr').textContent = d.address + ' (BuildingID ' + d.buildingid + ')';
   document.getElementById('d-narrative').textContent = 'Loading live data from NYC Open Data...';
@@ -303,11 +350,6 @@ function renderSummary(data) {
     `NYC Building Stories — ${data.length.toLocaleString()} buildings analyzed`;
 }
 
-function updateBreadcrumb(boroDisplay, nbhdName) {
-  document.getElementById('breadcrumb').textContent =
-    nbhdName ? `${boroDisplay} → ${nbhdName}` : boroDisplay;
-}
-
 function patternBar(counts, total) {
   return PATTERN_ORDER.map(p => {
     const pct = total ? (counts[p] || 0) / total * 100 : 0;
@@ -325,7 +367,7 @@ function renderBoroughs(data, neighborhoods, map) {
     byBoro[d.boro].total += 1;
   }
   const container = document.getElementById('boroughs');
-  container.innerHTML = '<h3>City &rarr; borough &rarr; neighborhood &rarr; building</h3>';
+  container.innerHTML = '';
   const order = ["BROOKLYN", "BRONX", "QUEENS", "MANHATTAN", "STATEN ISLAND"];
   for (const boro of order) {
     const c = byBoro[boro];
@@ -344,7 +386,6 @@ function renderBoroughs(data, neighborhoods, map) {
     row.querySelector('.boro-name').onclick = () => {
       const target = BORO_CENTERS[boro];
       if (target) map.flyTo({ center: target.center, zoom: target.zoom, pitch: 55, duration: 1500 });
-      updateBreadcrumb(displayName);
 
       expanded = !expanded;
       row.classList.toggle('open', expanded);
@@ -365,7 +406,6 @@ function renderBoroughs(data, neighborhoods, map) {
           nRow.onclick = (e) => {
             e.stopPropagation();
             map.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
-            updateBreadcrumb(displayName, n.neighborhood);
           };
           nbhdListEl.appendChild(nRow);
         }

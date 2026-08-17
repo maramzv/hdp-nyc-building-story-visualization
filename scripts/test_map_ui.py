@@ -124,6 +124,10 @@ def main():
         check("tooltip hides when mouse moves off a building", not page.locator("#tooltip").is_visible())
 
         print("\nFlow 8: Search box returns results and clicking one opens detail")
+        # The search box lives in the Explorer view, which Flow 5-6 slid away
+        # from when it opened a building's Story view - go back first.
+        page.click("#back-button")
+        page.wait_for_timeout(450)  # matches map.html's SLIDE_MS (320) plus margin
         # Use a real address fragment from the loaded sample
         search_term = page.evaluate("window.__TEST_DATA__[5].address.split(' ').slice(1,3).join(' ')")
         page.fill("#search-box", search_term)
