@@ -158,9 +158,9 @@ def main():
         center_x, center_y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         page.mouse.click(center_x, center_y)
         page.wait_for_timeout(300)
-        clicked_addr = page.locator("#d-addr").inner_text()
+        clicked_id = page.locator("#d-buildingid").inner_text()
         check(f"real canvas click picked the correct building ({target['address']})",
-              target["buildingid"] in clicked_addr, f"got: {clicked_addr}")
+              target["buildingid"] in clicked_id, f"got: {clicked_id}")
 
         print(f"\n=== Console errors during entire run: {len(console_errors)} ===")
         for e in console_errors:

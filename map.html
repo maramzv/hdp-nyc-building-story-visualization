@@ -353,6 +353,7 @@ function clearSelection() {
   }
   if (selectionPinLayer) selectionPinLayer.setProps({ data: [] });
   hideSearchSelection();
+  if (mapRef) mapRef.flyTo({ ...HOME_VIEW, duration: 2200 });
 }
 
 // Explorer (directory) and Story (single-building) are two mutually-exclusive
@@ -558,6 +559,7 @@ function showDetail(d) {
     });
 }
 
+const HOME_VIEW = { center: [-73.97, 40.72], zoom: 10, pitch: 55, bearing: -10 };
 const BORO_CENTERS = {
   "MANHATTAN":     { center: [-73.9712, 40.7831], zoom: 12.5 },
   "BRONX":         { center: [-73.8648, 40.8448], zoom: 11.5 },
@@ -747,7 +749,7 @@ Promise.all([
 
     document.getElementById('landing-enter').onclick = () => {
       document.getElementById('landing').classList.add('hidden');
-      map.flyTo({ center: [-73.97, 40.72], zoom: 10, pitch: 55, bearing: -10, duration: 3500 });
+      map.flyTo({ ...HOME_VIEW, duration: 3500 });
     };
 
     const tooltip = document.getElementById('tooltip');
@@ -764,10 +766,34 @@ Promise.all([
       }
     };
 
-    buildingLayers = bucketBySize(data).map((tier, i) => new deck.MapboxLayer({
+    // Rendering (and, more importantly, deck.gl's GPU picking readback) all
+    // 167k columns at once is the root cause of the documented full-scale
+    // click-picking failures (2026-08-15 log: GPU stall -> no hit; later
+    // observed as a wrong-building hit under similar GPU load). Keeping each
+    // tier's fixed radius (computed from the FULL citywide set, so it never
+    // shifts as you pan) but only feeding the currently-visible subset into
+    // the layer shrinks the picking buffer to roughly what's on screen.
+    const sizeTiers = bucketBySize(data); // [{data: [...], radius}, ...], data = ALL buildings in that tier
+    function buildingsInBounds(arr, b) {
+      return arr.filter(d => d.lon >= b.west && d.lon <= b.east && d.lat >= b.south && d.lat <= b.north);
+    }
+    function updateVisibleBuildings() {
+      const b = map.getBounds();
+      const lonPad = (b.getEast() - b.getWest()) * 0.3; // small pan margin so buildings don't pop in/out abruptly
+      const latPad = (b.getNorth() - b.getSouth()) * 0.3;
+      const padded = {
+        west: b.getWest() - lonPad, east: b.getEast() + lonPad,
+        south: b.getSouth() - latPad, north: b.getNorth() + latPad,
+      };
+      buildingLayers.forEach((layer, i) => {
+        layer.setProps({ data: buildingsInBounds(sizeTiers[i].data, padded) });
+      });
+    }
+
+    buildingLayers = sizeTiers.map((tier, i) => new deck.MapboxLayer({
       id: 'buildings-' + i,
       type: deck.ColumnLayer,
-      data: tier.data,
+      data: [], // populated by updateVisibleBuildings() once the map has real bounds
       diskResolution: 4,
       angle: 45,
       radius: tier.radius,
@@ -804,7 +830,9 @@ Promise.all([
     map.on('load', () => {
       for (const layer of buildingLayers) map.addLayer(layer);
       map.addLayer(selectionPinLayer);
+      updateVisibleBuildings();
     });
+    map.on('moveend', updateVisibleBuildings);
   })
   .catch(err => {
     document.getElementById('status').textContent = 'Error loading data: ' + err;
