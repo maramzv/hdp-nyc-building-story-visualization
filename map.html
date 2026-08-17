@@ -387,14 +387,18 @@ function markSelected(d) {
 }
 
 // Clears the selected building entirely (outline, pin, search-bar selection
-// UI) - the "✕ Clear" action. Doesn't touch which panel view is showing.
+// UI) - the "✕ Clear" action. Also resets the directory back to the
+// top-level Boroughs view (doesn't retain whatever borough/neighborhood was
+// last browsed) and replays the full landing-page fly-in, since Clear is
+// meant to be a genuine full reset, not just "forget this one building".
 function clearSelection() {
   selectedBuildingId = null;
   selectedBuildingData = null;
   refreshBuildingLayerStyling();
   if (selectionPinLayer) selectionPinLayer.setProps({ data: [] });
   hideSearchSelection();
-  if (mapRef) mapRef.flyTo({ ...HOME_VIEW, duration: 2200 });
+  showBoroughsView(true, false); // reset the drill-down; skip its own flyTo, flyInFromStart() below replaces it
+  flyInFromStart();
 }
 
 // Explorer (directory) and Story (single-building) are two mutually-exclusive
@@ -525,15 +529,16 @@ function showNeighborhoodsView(boro, animate = true, highlightNeighborhood = nul
   }
 }
 
-function showBoroughsView(animate = true) {
+function showBoroughsView(animate = true, fly = true) {
   const stack = document.getElementById('explorer-stack');
   const boroughsEl = document.getElementById('boroughs-view');
   const nbhdEl = document.getElementById('neighborhoods-view');
 
   selectedBoro = null;
   selectedNeighborhood = null;
+  if (selectedNameEl) { selectedNameEl.classList.remove('selected'); selectedNameEl = null; }
   refreshBuildingLayerStyling();
-  if (mapRef) mapRef.flyTo({ ...HOME_VIEW, duration: 2200 });
+  if (fly && mapRef) mapRef.flyTo({ ...HOME_VIEW, duration: 2200 });
 
   boroughsEl.style.display = 'block';
   if (animate) {
@@ -672,7 +677,19 @@ function showDetail(d) {
     });
 }
 
+const INITIAL_VIEW = { center: [-73.97, 40.72], zoom: 8.5, pitch: 0, bearing: 0 }; // matches the map's own init params
 const HOME_VIEW = { center: [-73.97, 40.72], zoom: 10, pitch: 55, bearing: -10 };
+
+// Replays the exact same cinematic entrance as clicking "Explore the map" on
+// the landing screen: snap back to the pre-flyover starting point, then fly
+// in with the same duration - used on real load and whenever the user wants
+// to fully reset (e.g. clearing a selection), instead of a shorter flyTo
+// from wherever the camera happens to be, which reads as an abrupt jump cut.
+function flyInFromStart() {
+  if (!mapRef) return;
+  mapRef.jumpTo(INITIAL_VIEW);
+  mapRef.flyTo({ ...HOME_VIEW, duration: 3500 });
+}
 const BORO_CENTERS = {
   "MANHATTAN":     { center: [-73.9712, 40.7831], zoom: 12.5 },
   "BRONX":         { center: [-73.8648, 40.8448], zoom: 11.5 },
@@ -884,12 +901,16 @@ Promise.all([
 
     document.getElementById('landing-enter').onclick = () => {
       document.getElementById('landing').classList.add('hidden');
-      map.flyTo({ ...HOME_VIEW, duration: 3500 });
+      flyInFromStart();
     };
 
     const tooltip = document.getElementById('tooltip');
 
-    const onClick = (info) => { if (info.object) showDetail(info.object); };
+    const onClick = (info) => {
+      if (!info.object) return;
+      map.flyTo({ center: [info.object.lon, info.object.lat], zoom: 17, pitch: 60, duration: 1800 });
+      showDetail(info.object);
+    };
     const onHover = (info) => {
       if (info.object) {
         tooltip.style.display = 'block';
