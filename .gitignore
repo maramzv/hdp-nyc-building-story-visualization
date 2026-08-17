@@ -9,3 +9,6 @@ data/*.json
 !data/.gitkeep
 data/sample2983_backup/
 docs/
+
+# Claude Code chat transcripts (local records only)
+.claude/save-chat-state.json
