@@ -34,18 +34,33 @@
   #search-wrap { position: relative; margin-top: 12px; }
   #search-box {
     width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-    color: #e8eaf0; font-size: 12px; padding: 9px 11px; border-radius: 7px; outline: none;
-    transition: padding-left 0.15s ease;
+    color: #e8eaf0; font-size: 12px; padding: 9px 11px 9px 28px; border-radius: 7px; outline: none;
   }
   #search-box:focus { border-color: rgba(255,255,255,0.3); }
   #search-box::placeholder { color: #6c7180; }
-  #search-box.has-pin { padding-left: 28px; }
-  #search-pin-icon {
-    display: none; position: absolute; left: 10px; top: 10px; width: 13px; height: 13px; pointer-events: none;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='white' d='M12 0C7.58 0 4 3.58 4 8c0 5.25 8 16 8 16s8-10.75 8-16c0-4.42-3.58-8-8-8zm0 11a3 3 0 110-6 3 3 0 010 6z'/></svg>");
+  #search-box.no-match { border-color: #d9a63e; }
+
+  /* Left icon inside the search box has 3 states: a resting magnifying
+     glass, the selection pin once a building is chosen, and a spinner
+     while an Enter-triggered lookup/flyTo is in flight. */
+  #search-icon { position: absolute; left: 10px; top: 10px; width: 13px; height: 13px; pointer-events: none; }
+  #search-icon.state-default {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path fill='none' stroke='%239aa1b2' stroke-width='2' d='M10 2a8 8 0 105.29 14.29l5.21 5.21 1.5-1.5-5.21-5.21A8 8 0 0010 2zm0 2a6 6 0 110 12 6 6 0 010-12z'/></svg>");
     background-size: contain; background-repeat: no-repeat;
   }
-  #search-pin-icon.visible { display: block; }
+  #search-icon.state-pin {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path fill='white' d='M12 0C7.58 0 4 3.58 4 8c0 5.25 8 16 8 16s8-10.75 8-16c0-4.42-3.58-8-8-8zm0 11a3 3 0 110-6 3 3 0 010 6z'/></svg>");
+    background-size: contain; background-repeat: no-repeat;
+  }
+  #search-icon.state-loading {
+    border: 2px solid rgba(255,255,255,0.25); border-top-color: #fff; border-radius: 50%;
+    box-sizing: border-box; animation: search-spin 0.7s linear infinite;
+  }
+  @keyframes search-spin { to { transform: rotate(360deg); } }
+
+  #search-no-match { display: none; font-size: 11.5px; color: #d9a63e; margin-top: 6px; padding: 0 2px; }
+  #search-no-match.visible { display: block; }
+
   #search-action-row {
     display: none; align-items: center; justify-content: space-between;
     margin-top: 6px; padding: 0 2px; font-size: 12px; color: #9aa1b2;
@@ -89,12 +104,29 @@
     padding-bottom: 12px; border-bottom: 1px solid #333747; user-select: none;
   }
   #back-button:hover { color: #fff; }
-  #detail h2 { font-size: 14px; margin: 0 0 6px 0; }
-  #detail .addr { font-size: 12px; color: #9aa1b2; margin-bottom: 10px; }
+  #detail h2 { font-size: 14px; margin: 0 0 6px 0; display: flex; align-items: center; gap: 7px; }
+  .pattern-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  #detail .addr { font-size: 13px; color: #e8eaf0; font-weight: 500; margin-bottom: 10px; }
   #detail .narrative { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
-  #detail .dims { font-size: 11px; color: #b5bac9; display: flex; flex-direction: column; gap: 3px; }
-  #detail .dims span.k { color: #767c8c; }
+  #detail .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .dim-card {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .dim-card .dim-k { font-size: 10px; color: #767c8c; text-transform: uppercase; letter-spacing: 0.03em; }
+  .dim-card .dim-v { font-size: 12.5px; color: #d0d3dd; font-weight: 600; }
   .similar { font-size: 11.5px; color: #9aa1b2; margin-top: 10px; padding: 8px 10px; background: rgba(255,255,255,0.04); border-radius: 6px; line-height: 1.4; }
+
+  /* Skeleton loading state: shown the moment a building is selected, while
+     the real per-building narrative/dims are still being fetched live. */
+  .skel {
+    background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 37%, rgba(255,255,255,0.05) 63%);
+    background-size: 400% 100%; animation: skel-pulse 1.4s ease infinite; border-radius: 4px;
+  }
+  @keyframes skel-pulse { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+  .skel-line { height: 12px; margin-bottom: 8px; }
+  .skel-k { height: 8px; width: 55%; margin-bottom: 6px; }
+  .skel-v { height: 14px; width: 40%; }
   #evidence-toggle {
     margin-top: 14px; padding-top: 12px; border-top: 1px solid #333747;
     font-size: 12px; color: #9aa1b2; cursor: pointer; user-select: none;
@@ -105,9 +137,12 @@
   #evidence-table.open { display: block; }
   .ev-row { font-size: 11px; padding: 7px 0; border-bottom: 1px solid #23273499; }
   .ev-row .ev-top { display: flex; justify-content: space-between; color: #8a90a0; margin-bottom: 2px; }
+  .ev-row .ev-class-A { color: #e0c14c; font-weight: 600; }
+  .ev-row .ev-class-B { color: #e69a4c; font-weight: 600; }
   .ev-row .ev-class-C { color: #e67a6e; font-weight: 600; }
   .ev-row .ev-desc { color: #c4c7d1; line-height: 1.4; }
   #evidence-more { font-size: 10.5px; color: #666c7c; padding-top: 6px; text-align: center; }
+  #d-buildingid { font-size: 10.5px; color: #666c7c; margin-top: 12px; text-align: center; }
   #status { position: absolute; bottom: 34px; right: 8px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; z-index: 2; }
 
   #tooltip {
@@ -163,9 +198,10 @@
   <div id="panel-stack">
     <div id="explorer-view">
       <div id="search-wrap">
-        <span id="search-pin-icon"></span>
+        <span id="search-icon" class="state-default"></span>
         <input id="search-box" type="text" placeholder="Search for an address..." autocomplete="off">
         <div id="search-results"></div>
+        <div id="search-no-match">No open violations on record for this address</div>
         <div id="search-action-row">
           <span id="search-action-view">View Story &rarr;</span>
           <span id="search-action-clear">&#10005; Clear</span>
@@ -184,6 +220,7 @@
         <div class="similar" id="d-similar"></div>
         <div id="evidence-toggle">Why we're saying this &rarr; <span id="evidence-count"></span></div>
         <div id="evidence-table"></div>
+        <div id="d-buildingid"></div>
       </div>
     </div>
   </div>
@@ -257,6 +294,23 @@ function flyToBuilding(d) {
   showStory(d.neighborhood);
 }
 
+// The search box's left icon has 3 mutually-exclusive states - resting
+// magnifying glass, the selection pin, or a spinner while an Enter-triggered
+// lookup/flyTo is in flight (see renderSearch's keydown handler).
+function setSearchIcon(state) {
+  document.getElementById('search-icon').className = 'state-' + state;
+}
+
+function showNoMatchWarning() {
+  document.getElementById('search-box').classList.add('no-match');
+  document.getElementById('search-no-match').classList.add('visible');
+}
+
+function hideNoMatchWarning() {
+  document.getElementById('search-box').classList.remove('no-match');
+  document.getElementById('search-no-match').classList.remove('visible');
+}
+
 // The search bar doubles as the "current selection" indicator, Google-Maps-
 // style: its value becomes the selected building's address, a pin icon
 // appears inside it, and a compact action row appears underneath. Doesn't
@@ -264,8 +318,8 @@ function flyToBuilding(d) {
 function showSearchSelection(d) {
   const box = document.getElementById('search-box');
   box.value = d.address;
-  box.classList.add('has-pin');
-  document.getElementById('search-pin-icon').classList.add('visible');
+  setSearchIcon('pin');
+  hideNoMatchWarning();
   document.getElementById('search-action-row').classList.add('visible');
   document.getElementById('search-results').classList.remove('open');
   document.getElementById('search-action-view').onclick = () => flyToBuilding(d);
@@ -275,8 +329,7 @@ function showSearchSelection(d) {
 function hideSearchSelection() {
   const box = document.getElementById('search-box');
   box.value = '';
-  box.classList.remove('has-pin');
-  document.getElementById('search-pin-icon').classList.remove('visible');
+  setSearchIcon('default');
   document.getElementById('search-action-row').classList.remove('visible');
 }
 
@@ -423,12 +476,41 @@ function renderEvidence(records) {
   const shown = records.slice(0, EVIDENCE_DISPLAY_LIMIT);
   tableEl.innerHTML = shown.map(r => `
     <div class="ev-row">
-      <div class="ev-top"><span class="${r.class === 'C' ? 'ev-class-C' : ''}">${r.date || 'no date'} · Class ${r.class || '?'}</span><span>${r.status || ''}</span></div>
+      <div class="ev-top"><span class="${['A', 'B', 'C'].includes(r.class) ? 'ev-class-' + r.class : ''}">${r.date || 'no date'} · Class ${r.class || '?'}</span><span>${r.status || ''}</span></div>
       <div class="ev-desc">${r.description || ''}</div>
     </div>`).join('') +
     (records.length > EVIDENCE_DISPLAY_LIMIT
       ? `<div id="evidence-more">showing ${EVIDENCE_DISPLAY_LIMIT} of ${records.length} records</div>` : '');
   document.getElementById('evidence-toggle').onclick = () => tableEl.classList.toggle('open');
+}
+
+function renderHeadline(pattern, scale) {
+  const color = PATTERN_COLORS[pattern] || [120, 120, 120];
+  document.getElementById('d-headline').innerHTML =
+    `<span class="pattern-dot" style="background: rgb(${color.join(',')})"></span>${pattern} · ${scale} scale`;
+}
+
+function renderDims(profile) {
+  document.getElementById('d-dims').innerHTML = [
+    ['Active violations', profile.active_count],
+    ['Recency', profile.recency],
+    ['Severity', profile.severity],
+    ['Engagement', profile.engagement],
+    ['Backlog age', profile.backlog_age],
+  ].map(([k, v]) => `<div class="dim-card"><span class="dim-k">${k}</span><span class="dim-v">${v}</span></div>`).join('');
+}
+
+// Pulsating grey placeholders shown the instant a building is selected,
+// while the real per-building narrative/dims are still being fetched live
+// from NYC's API - replaced by renderHeadline()/renderDims() once resolved.
+function renderSkeleton() {
+  document.getElementById('d-narrative').innerHTML =
+    `<div class="skel skel-line" style="width:100%"></div>
+     <div class="skel skel-line" style="width:92%"></div>
+     <div class="skel skel-line" style="width:58%"></div>`;
+  document.getElementById('d-dims').innerHTML = Array.from({ length: 5 }).map(() =>
+    `<div class="dim-card"><div class="skel skel-k"></div><div class="skel skel-v"></div></div>`
+  ).join('');
 }
 
 /** d = the lightweight, batch-computed dot data (position/pattern/scale/neighborhood).
@@ -439,10 +521,10 @@ function showDetail(d) {
   markSelected(d);
   showStory(d.neighborhood);
 
-  document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
-  document.getElementById('d-addr').textContent = d.address + ' (BuildingID ' + d.buildingid + ')';
-  document.getElementById('d-narrative').textContent = 'Loading live data from NYC Open Data...';
-  document.getElementById('d-dims').innerHTML = '';
+  renderHeadline(d.pattern, d.scale);
+  document.getElementById('d-addr').textContent = d.address;
+  document.getElementById('d-buildingid').textContent = 'BuildingID ' + d.buildingid;
+  renderSkeleton();
   renderSimilar(d.buildingid, d.pattern, d.neighborhood);
   document.getElementById('evidence-count').textContent = '';
   document.getElementById('evidence-table').innerHTML = '';
@@ -462,15 +544,9 @@ function showDetail(d) {
       const profile = buildProfile(d.buildingid, records, new Date());
       const narrative = generateNarrative(profile);
 
-      document.getElementById('d-headline').textContent = profile.pattern + ' · ' + profile.scale + ' scale';
+      renderHeadline(profile.pattern, profile.scale);
       document.getElementById('d-narrative').textContent = narrative;
-      document.getElementById('d-dims').innerHTML = [
-        ['Active violations', profile.active_count],
-        ['Recency', profile.recency],
-        ['Severity', profile.severity],
-        ['Engagement', profile.engagement],
-        ['Backlog age', profile.backlog_age],
-      ].map(([k, v]) => `<div><span class="k">${k}:</span> ${v}</div>`).join('');
+      renderDims(profile);
 
       renderEvidence(buildEvidenceFromRecords(records));
     })
@@ -565,7 +641,16 @@ function renderLanding(data) {
 function renderSearch(data, map) {
   const box = document.getElementById('search-box');
   const results = document.getElementById('search-results');
+
+  function selectMatch(m) {
+    map.flyTo({ center: [m.lon, m.lat], zoom: 17, pitch: 60, duration: 1800 });
+    showDetail(m);
+    results.classList.remove('open');
+    box.value = m.address;
+  }
+
   box.addEventListener('input', () => {
+    hideNoMatchWarning();
     const q = box.value.trim().toUpperCase();
     results.innerHTML = '';
     if (q.length < 3) { results.classList.remove('open'); return; }
@@ -576,14 +661,32 @@ function renderSearch(data, map) {
       const row = document.createElement('div');
       row.className = 'search-result';
       row.innerHTML = `<span>${m.address}</span><span class="n" style="color: rgb(${PATTERN_COLORS[m.pattern].join(',')})">${m.pattern}</span>`;
-      row.onclick = () => {
-        map.flyTo({ center: [m.lon, m.lat], zoom: 17, pitch: 60, duration: 1800 });
-        showDetail(m);
-        results.classList.remove('open');
-        box.value = m.address;
-      };
+      row.onclick = () => selectMatch(m);
       results.appendChild(row);
     }
+  });
+
+  // Enter jumps straight to the top match (rather than requiring a dropdown
+  // click) - shows a spinner in place of the resting icon while the camera
+  // flies there, or a soft warning if nothing in the loaded sample matches
+  // (which, since this dataset is only buildings with an open violation,
+  // reads as real information: this address has none on record).
+  box.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const q = box.value.trim().toUpperCase();
+    if (q.length < 3) return;
+    const matches = data.filter(d => d.address.toUpperCase().includes(q));
+    if (!matches.length) {
+      showNoMatchWarning();
+      results.classList.remove('open');
+      return;
+    }
+    hideNoMatchWarning();
+    results.classList.remove('open');
+    const m = matches[0];
+    selectMatch(m); // sets the icon to 'pin' as part of normal selection - override below
+    setSearchIcon('loading');
+    map.once('moveend', () => setSearchIcon('pin'));
   });
 }
 

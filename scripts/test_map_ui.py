@@ -75,7 +75,7 @@ def main():
         """)
         check("detail panel visible immediately (batch data)", page.locator("#detail").is_visible())
         check("shows loading state while live fetch is in flight",
-              "Loading" in page.locator("#d-narrative").inner_text())
+              page.locator("#d-narrative .skel").count() > 0)
         # Wait for the REAL network round-trip to NYC's API to resolve (not a fixed sleep -
         # poll until the placeholder text is gone, with a generous timeout since NYC's API
         # has been observed to be occasionally slow)
