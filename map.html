@@ -35,9 +35,24 @@
   #search-box {
     width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
     color: #e8eaf0; font-size: 12px; padding: 9px 11px; border-radius: 7px; outline: none;
+    transition: padding-left 0.15s ease;
   }
   #search-box:focus { border-color: rgba(255,255,255,0.3); }
   #search-box::placeholder { color: #6c7180; }
+  #search-box.has-pin { padding-left: 28px; }
+  #search-pin-icon {
+    display: none; position: absolute; left: 10px; top: 10px; width: 13px; height: 13px; pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='white' d='M12 0C7.58 0 4 3.58 4 8c0 5.25 8 16 8 16s8-10.75 8-16c0-4.42-3.58-8-8-8zm0 11a3 3 0 110-6 3 3 0 010 6z'/></svg>");
+    background-size: contain; background-repeat: no-repeat;
+  }
+  #search-pin-icon.visible { display: block; }
+  #search-action-row {
+    display: none; align-items: center; justify-content: space-between;
+    margin-top: 6px; padding: 0 2px; font-size: 12px; color: #9aa1b2;
+  }
+  #search-action-row.visible { display: flex; }
+  #search-action-view, #search-action-clear { cursor: pointer; }
+  #search-action-view:hover, #search-action-clear:hover { color: #fff; }
   #search-results {
     display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 5;
     background: #14161e; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden;
@@ -95,21 +110,6 @@
   #evidence-more { font-size: 10.5px; color: #666c7c; padding-top: 6px; text-align: center; }
   #status { position: absolute; bottom: 34px; right: 8px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; z-index: 2; }
 
-  /* Selected-building pin: a real maplibregl.Marker (plain HTML), not a
-     deck.gl 3D layer - a flat 2D UI element sitting on top of the 3D
-     columns, so it stays a crisp, consistently-sized landmark regardless
-     of camera pitch/zoom instead of shrinking/tilting/getting buried. */
-  .selection-pin {
-    font-size: 30px; line-height: 1; cursor: pointer;
-    filter: drop-shadow(0 3px 5px rgba(0,0,0,0.6));
-    animation: pin-drop 0.4s ease-out;
-    transform-origin: bottom center;
-  }
-  @keyframes pin-drop {
-    0%   { transform: translateY(-16px) scale(0.6); opacity: 0; }
-    60%  { transform: translateY(2px) scale(1.05); opacity: 1; }
-    100% { transform: translateY(0) scale(1); }
-  }
   #tooltip {
     position: absolute; display: none; pointer-events: none; z-index: 10;
     background: rgba(15, 16, 22, 0.95); color: #e8eaf0; font-size: 12px;
@@ -129,21 +129,6 @@
   .nbhd-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #1a1d27; }
   .nbhd-bar div { height: 100%; }
 
-  /* Nested "selected building" row - lives under whichever neighborhood
-     owns the currently-selected building, styled like the rest of the
-     collapsing directory (indent + neutral border) rather than a callout. */
-  .nbhd-selection { display: none; }
-  .nbhd-selection.visible {
-    display: block; margin: 8px 0 2px 10px; padding: 6px 0 2px 10px;
-    border-left: 1px solid #333747; font-size: 11px; cursor: default;
-  }
-  .nbhd-sel-addr { display: flex; align-items: center; gap: 6px; min-width: 0; color: #d0d3dd; }
-  .nbhd-sel-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .nbhd-sel-actions { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
-  .nbhd-sel-view { color: #9aa1b2; cursor: pointer; }
-  .nbhd-sel-view:hover { color: #fff; }
-  .nbhd-sel-close { color: #767c8c; cursor: pointer; }
-  .nbhd-sel-close:hover { color: #fff; }
   .boro-name .caret { color: #666c7c; margin-right: 4px; transition: transform 0.15s; display: inline-block; }
   .boro-row.open .caret { transform: rotate(90deg); }
 
@@ -178,8 +163,13 @@
   <div id="panel-stack">
     <div id="explorer-view">
       <div id="search-wrap">
+        <span id="search-pin-icon"></span>
         <input id="search-box" type="text" placeholder="Search for an address..." autocomplete="off">
         <div id="search-results"></div>
+        <div id="search-action-row">
+          <span id="search-action-view">View Story &rarr;</span>
+          <span id="search-action-clear">&#10005; Clear</span>
+        </div>
       </div>
       <div id="boroughs"></div>
     </div>
@@ -237,44 +227,57 @@ const EVIDENCE_DISPLAY_LIMIT = 100; // cap DOM rows for buildings with hundreds 
 let currentRequestId = 0; // guards against a slow earlier click overwriting a newer one
 
 // Populated once the map/layers exist (see Promise.all below); showDetail()
-// uses these to outline the selected building and drop a 2D pin above it,
+// uses these to outline the selected building and drop a pin on its roof,
 // so it's identifiable among many similarly-colored/sized neighbors.
 let selectedBuildingId = null;
-let selectedBuildingData = null; // full record - drives the nested directory row + "View Story"
+let selectedBuildingData = null; // full record - drives the search-bar selection UI + "View Story"
 let buildingLayers = [];
-
-// Populated once by renderBoroughs(); markSelected()/clearSelection() use these
-// to reveal the selected building nested under its owning neighborhood in the
-// directory, the same accordion the user browses with (see renderBoroughs).
-let boroRowEls = {};
-let nbhdRowEls = {};
 let mapRef = null;
 let neighborhoodsRef = null;
 
-// A real maplibregl.Marker (plain HTML/CSS) rather than a deck.gl 3D layer -
-// it floats as a flat 2D pin over the map regardless of camera pitch/zoom,
-// instead of being a world-space object that can shrink, tilt away from the
-// camera, or get buried among the 3D columns.
-let selectionPinMarker = null;
+// The pin has to sit at the selected building's actual roof height (not
+// ground level), which a maplibregl.Marker (plain HTML, ground-projected
+// only) can't do - a deck.gl IconLayer positioned with a real [lon, lat,
+// altitude] renders correctly in 3D, and `billboard: true` keeps the icon
+// always facing the camera (flat and crisp) rather than laid flat on the
+// roof or skewed by pitch, so it still reads as a clean 2D pin glyph.
+const PIN_ICON_URL = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path fill='white' stroke='%23333' stroke-width='0.5' d='M12 0C7.58 0 4 3.58 4 8c0 5.25 8 16 8 16s8-10.75 8-16c0-4.42-3.58-8-8-8zm0 11a3 3 0 110-6 3 3 0 010 6z'/></svg>";
+let selectionPinLayer = null;
 
 function updateSelectionPin(d) {
-  if (selectionPinMarker) { selectionPinMarker.remove(); selectionPinMarker = null; }
-  if (!mapRef) return;
-  const el = document.createElement('div');
-  el.className = 'selection-pin';
-  el.textContent = '📍';
-  el.title = 'Zoom to ' + d.address;
-  el.onclick = () => flyToBuilding(d);
-  selectionPinMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-    .setLngLat([d.lon, d.lat])
-    .addTo(mapRef);
+  if (!selectionPinLayer) return;
+  const roofHeight = Math.max(d.floors, 2) * 8 + 3; // matches ColumnLayer's elevation*elevationScale, +clearance
+  selectionPinLayer.setProps({ data: [{ ...d, height: roofHeight }] });
 }
 
 // Flies the camera back to a building and shows its Story view - used by
-// both the floating pin and the nested directory row's "View Story" link.
+// both the floating pin and the search bar's "View Story" link.
 function flyToBuilding(d) {
   if (mapRef) mapRef.flyTo({ center: [d.lon, d.lat], zoom: 17, pitch: 60, duration: 1800 });
   showStory(d.neighborhood);
+}
+
+// The search bar doubles as the "current selection" indicator, Google-Maps-
+// style: its value becomes the selected building's address, a pin icon
+// appears inside it, and a compact action row appears underneath. Doesn't
+// touch the borough/neighborhood accordion state at all.
+function showSearchSelection(d) {
+  const box = document.getElementById('search-box');
+  box.value = d.address;
+  box.classList.add('has-pin');
+  document.getElementById('search-pin-icon').classList.add('visible');
+  document.getElementById('search-action-row').classList.add('visible');
+  document.getElementById('search-results').classList.remove('open');
+  document.getElementById('search-action-view').onclick = () => flyToBuilding(d);
+  document.getElementById('search-action-clear').onclick = () => clearSelection();
+}
+
+function hideSearchSelection() {
+  const box = document.getElementById('search-box');
+  box.value = '';
+  box.classList.remove('has-pin');
+  document.getElementById('search-pin-icon').classList.remove('visible');
+  document.getElementById('search-action-row').classList.remove('visible');
 }
 
 function markSelected(d) {
@@ -284,19 +287,19 @@ function markSelected(d) {
     layer.setProps({ updateTriggers: { getLineColor: selectedBuildingId } });
   }
   updateSelectionPin(d);
-  showSelectionInDirectory(d);
+  showSearchSelection(d);
 }
 
-// Clears the selected building entirely (outline, pin, nested directory
-// row) - the "✕" next to it. Doesn't touch which panel view is showing.
+// Clears the selected building entirely (outline, pin, search-bar selection
+// UI) - the "✕ Clear" action. Doesn't touch which panel view is showing.
 function clearSelection() {
   selectedBuildingId = null;
   selectedBuildingData = null;
   for (const layer of buildingLayers) {
     layer.setProps({ updateTriggers: { getLineColor: selectedBuildingId } });
   }
-  if (selectionPinMarker) { selectionPinMarker.remove(); selectionPinMarker = null; }
-  clearSelectionMarkerDOM();
+  if (selectionPinLayer) selectionPinLayer.setProps({ data: [] });
+  hideSearchSelection();
 }
 
 // Explorer (directory) and Story (single-building) are two mutually-exclusive
@@ -326,41 +329,12 @@ function showExplorer() {
 
 document.getElementById('back-button').onclick = showExplorer;
 
-function clearSelectionMarkerDOM() {
-  for (const el of document.querySelectorAll('.nbhd-selection.visible')) {
-    el.classList.remove('visible');
-    el.innerHTML = '';
-  }
-}
-
-// Renders the small "you're looking at this building" row nested under its
-// owning neighborhood in the directory - auto-expanding to that borough and
-// neighborhood first (building the neighborhood's row if it wasn't already
-// one of the top 8 shown) so it's always reachable, not just when it
-// happens to already be visible.
-function showSelectionInDirectory(d) {
-  clearSelectionMarkerDOM();
-  if (!d.boro || !d.neighborhood || !mapRef || !neighborhoodsRef) return;
-  const row = boroRowEls[d.boro];
-  if (!row) return;
-  openBoroRow(d.boro, row, d.neighborhood);
-  const nRow = nbhdRowEls[d.boro + '||' + d.neighborhood];
-  if (!nRow) return;
-
-  const sel = nRow.querySelector('.nbhd-selection');
-  sel.innerHTML = `
-    <div class="nbhd-sel-addr"><span>&#128205;</span><span class="nbhd-sel-text">${d.address}</span></div>
-    <div class="nbhd-sel-actions"><span class="nbhd-sel-view">View Story &rarr;</span><span class="nbhd-sel-close">&#10005;</span></div>`;
-  sel.classList.add('visible');
-  sel.querySelector('.nbhd-sel-view').onclick = (e) => { e.stopPropagation(); flyToBuilding(d); };
-  sel.querySelector('.nbhd-sel-close').onclick = (e) => { e.stopPropagation(); clearSelection(); };
-}
-
-// Directory accordion state, shared between manual borough/neighborhood
-// clicks (renderBoroughs, below) and showSelectionInDirectory() above -
-// both go through openBoroRow() so there's one accordion, not two.
-let openRow = null;        // the one boro-row currently expanded
-let selectedNameEl = null; // whichever boro-name/nbhd-name was last clicked, kept bold+white until another is
+// Directory accordion state, shared by every borough/neighborhood row
+// (renderBoroughs, below) - one expanded borough at a time, one bold
+// "currently browsing" name at a time. Independent of building selection,
+// which now lives entirely in the search bar (see showSearchSelection).
+let openRow = null;
+let selectedNameEl = null;
 
 function selectName(el) {
   if (selectedNameEl) selectedNameEl.classList.remove('selected');
@@ -374,22 +348,19 @@ function buildNbhdRow(boro, n) {
   const nCounts = { Isolated: n.isolated, Persistent: n.persistent, Chronic: n.chronic };
   nRow.innerHTML = `
     <div class="nbhd-name"><span>${n.neighborhood}</span><span class="n">${n.total}</span></div>
-    <div class="nbhd-bar">${patternBar(nCounts, n.total)}</div>
-    <div class="nbhd-selection"></div>`;
+    <div class="nbhd-bar">${patternBar(nCounts, n.total)}</div>`;
   const nNameEl = nRow.querySelector('.nbhd-name');
   nRow.onclick = (e) => {
     e.stopPropagation();
     mapRef.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
     selectName(nNameEl);
   };
-  nbhdRowEls[boro + '||' + n.neighborhood] = nRow;
   return nRow;
 }
 
-// Expands a borough row, building its neighborhood list on first expand
-// (top 8 by count). If extraNeighborhoodName isn't among those top 8, it's
-// added anyway so a selected building's neighborhood is always reachable.
-function openBoroRow(boro, row, extraNeighborhoodName) {
+// Expands a borough row, building its neighborhood list (top 8 by count)
+// on first expand.
+function openBoroRow(boro, row) {
   const nbhdListEl = row.querySelector('.nbhd-list');
   if (openRow && openRow !== row) {
     openRow.classList.remove('open');
@@ -401,18 +372,11 @@ function openBoroRow(boro, row, extraNeighborhoodName) {
 
   if (!nbhdListEl.dataset.built) {
     nbhdListEl.dataset.built = '1';
-    let boroNbhds = neighborhoodsRef
+    const boroNbhds = neighborhoodsRef
       .filter(n => n.boro === boro)
       .sort((a, b) => b.total - a.total)
       .slice(0, 8);
-    if (extraNeighborhoodName && !boroNbhds.some(n => n.neighborhood === extraNeighborhoodName)) {
-      const extra = neighborhoodsRef.find(n => n.boro === boro && n.neighborhood === extraNeighborhoodName);
-      if (extra) boroNbhds = [extra, ...boroNbhds];
-    }
     for (const n of boroNbhds) nbhdListEl.appendChild(buildNbhdRow(boro, n));
-  } else if (extraNeighborhoodName && !nbhdRowEls[boro + '||' + extraNeighborhoodName]) {
-    const extra = neighborhoodsRef.find(n => n.boro === boro && n.neighborhood === extraNeighborhoodName);
-    if (extra) nbhdListEl.prepend(buildNbhdRow(boro, extra));
   }
 }
 
@@ -567,7 +531,6 @@ function renderBoroughs(data, neighborhoods, map) {
       <div class="nbhd-list"></div>`;
 
     const boroNameEl = row.querySelector('.boro-name');
-    boroRowEls[boro] = row;
 
     boroNameEl.onclick = () => {
       const target = BORO_CENTERS[boro];
@@ -722,8 +685,22 @@ Promise.all([
       onHover,
     }));
 
+    selectionPinLayer = new deck.MapboxLayer({
+      id: 'selection-pin',
+      type: deck.IconLayer,
+      data: [],
+      pickable: true,
+      billboard: true, // icon always faces the camera - stays a crisp flat pin, not laid onto the roof
+      getPosition: d => [d.lon, d.lat, d.height],
+      getIcon: () => ({ url: PIN_ICON_URL, width: 24, height: 24, anchorY: 24 }),
+      getSize: 34,
+      sizeUnits: 'pixels',
+      onClick: (info) => { if (info.object) flyToBuilding(info.object); },
+    });
+
     map.on('load', () => {
       for (const layer of buildingLayers) map.addLayer(layer);
+      map.addLayer(selectionPinLayer);
     });
   })
   .catch(err => {
