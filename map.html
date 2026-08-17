@@ -390,6 +390,34 @@ function renderSearch(data, map) {
   });
 }
 
+// ColumnLayer has no per-object radius accessor (radius is a single uniform
+// value for the whole layer), so per-building sizing is done by splitting
+// buildings into a few footprint-size tiers and rendering one cheap
+// GPU-instanced ColumnLayer per tier, each with its own fixed radius. This
+// keeps rendering performance identical to a single uniform-radius layer
+// while making dense blocks of genuinely small buildings stop overlapping
+// with a single citywide 20m disk size.
+const SIZE_TIERS = 5;
+
+function bucketBySize(data) {
+  const halfWidths = data.map(d => Math.sqrt(d.footprint_m2 || 150) / 2).sort((a, b) => a - b);
+  const edges = [];
+  for (let i = 1; i < SIZE_TIERS; i++) {
+    edges.push(halfWidths[Math.floor((i / SIZE_TIERS) * halfWidths.length)]);
+  }
+  const buckets = Array.from({ length: SIZE_TIERS }, () => []);
+  for (const d of data) {
+    const hw = Math.sqrt(d.footprint_m2 || 150) / 2;
+    let tier = edges.findIndex(edge => hw <= edge);
+    if (tier === -1) tier = SIZE_TIERS - 1;
+    buckets[tier].push({ d, hw });
+  }
+  return buckets.map(bucket => ({
+    data: bucket.map(b => b.d),
+    radius: bucket.length ? bucket.reduce((sum, b) => sum + b.hw, 0) / bucket.length : 10,
+  })).filter(b => b.data.length > 0);
+}
+
 Promise.all([
   fetch('data/map_dataset.json').then(r => r.json()),
   fetch('data/neighborhoods.json').then(r => r.json()),
@@ -424,12 +452,25 @@ Promise.all([
 
     const tooltip = document.getElementById('tooltip');
 
-    const layer = new deck.MapboxLayer({
-      id: 'buildings',
+    const onClick = (info) => { if (info.object) showDetail(info.object); };
+    const onHover = (info) => {
+      if (info.object) {
+        tooltip.style.display = 'block';
+        tooltip.style.left = (info.x + 14) + 'px';
+        tooltip.style.top = (info.y + 10) + 'px';
+        tooltip.innerHTML = `<div class="t-addr">${info.object.address}</div><div class="t-pattern">${info.object.pattern} · ${info.object.active_count} active</div>`;
+      } else {
+        tooltip.style.display = 'none';
+      }
+    };
+
+    const buildingLayers = bucketBySize(data).map((tier, i) => new deck.MapboxLayer({
+      id: 'buildings-' + i,
       type: deck.ColumnLayer,
-      data: data,
-      diskResolution: 8,
-      radius: 20,
+      data: tier.data,
+      diskResolution: 4,
+      angle: 45,
+      radius: tier.radius,
       extruded: true,
       pickable: true,
       elevationScale: 8,
@@ -437,21 +478,12 @@ Promise.all([
       getPosition: d => [d.lon, d.lat],
       getElevation: d => Math.max(d.floors, 2),
       getFillColor: d => PATTERN_COLORS[d.pattern] || [120, 120, 120],
-      onClick: (info) => { if (info.object) showDetail(info.object); },
-      onHover: (info) => {
-        if (info.object) {
-          tooltip.style.display = 'block';
-          tooltip.style.left = (info.x + 14) + 'px';
-          tooltip.style.top = (info.y + 10) + 'px';
-          tooltip.innerHTML = `<div class="t-addr">${info.object.address}</div><div class="t-pattern">${info.object.pattern} · ${info.object.active_count} active</div>`;
-        } else {
-          tooltip.style.display = 'none';
-        }
-      },
-    });
+      onClick,
+      onHover,
+    }));
 
     map.on('load', () => {
-      map.addLayer(layer);
+      for (const layer of buildingLayers) map.addLayer(layer);
     });
   })
   .catch(err => {

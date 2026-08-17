@@ -197,6 +197,18 @@ def main():
         except (ValueError, TypeError):
             continue
 
+        # Estimate each building's footprint (for map rendering) from PLUTO's
+        # total building area divided by floor count, converted sq ft -> m^2.
+        # Falls back to a typical NYC row-house footprint when bldgarea is
+        # missing/zero, and is clamped so bad data can't produce an absurd
+        # or invisible shape on the map.
+        try:
+            bldgarea_sqft = float(pluto.get("bldgarea") or 0)
+        except (ValueError, TypeError):
+            bldgarea_sqft = 0
+        footprint_m2 = (bldgarea_sqft / floors * 0.0929) if bldgarea_sqft else 150.0
+        footprint_m2 = max(30.0, min(2500.0, footprint_m2))
+
         output.append({
             "buildingid": bid,
             "address": p.address,
@@ -204,6 +216,7 @@ def main():
             "lat": lat,
             "lon": lon,
             "floors": floors,
+            "footprint_m2": footprint_m2,
             "active_count": p.active_count,
             "scale": p.scale,
             "recency": p.recency,
