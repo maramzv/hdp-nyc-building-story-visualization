@@ -45,21 +45,24 @@ def main():
         page.wait_for_timeout(500)
         check("landing hidden after click", not page.locator("#landing").is_visible())
 
-        print("\nFlow 3-4: Borough click expands neighborhoods; neighborhood click doesn't error")
+        print("\nFlow 3-4: Borough click drills into its neighborhoods view; neighborhood click doesn't error")
         # Timeout bumped from 10000: at full scale (167k buildings) the initial
         # deck.gl WebGL layer construction competes for the main thread and can
         # delay Playwright's own visibility polling even after the element is
         # actually visible.
         page.wait_for_selector(".boro-row", timeout=25000)
         first_boro = page.locator(".boro-row").first
-        first_boro.locator(".boro-name").click()
+        first_boro.click()
         page.wait_for_timeout(300)
-        check("borough row marked open", "open" in (first_boro.get_attribute("class") or ""))
-        nbhd_rows = first_boro.locator(".nbhd-row")
-        check("neighborhoods rendered under borough", nbhd_rows.count() > 0, f"count={nbhd_rows.count()}")
+        check("drilled into neighborhoods view",
+              "block" == page.evaluate("document.getElementById('neighborhoods-view').style.display"))
+        nbhd_rows = page.locator("#neighborhoods-list .nbhd-row")
+        check("neighborhoods rendered in drill-down", nbhd_rows.count() > 0, f"count={nbhd_rows.count()}")
         if nbhd_rows.count() > 0:
             nbhd_rows.first.click()
             page.wait_for_timeout(300)
+        page.click("#all-boroughs-back")
+        page.wait_for_timeout(500)
 
         print("\nFlow 5-6: Click a building - triggers a REAL live fetch to NYC's API, "
               "computes the story client-side, and shows evidence + similar-buildings")

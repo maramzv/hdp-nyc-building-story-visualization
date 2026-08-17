@@ -99,6 +99,24 @@
   #panel-stack.show-story #explorer-view { transform: translateX(-100%); opacity: 0; pointer-events: none; }
   #panel-stack.show-story #story-view { transform: translateX(0); opacity: 1; pointer-events: auto; }
 
+  /* Boroughs/Neighborhoods drill-down, nested one level inside Explorer -
+     same sliding technique as the outer Explorer/Story pair. Neighborhoods
+     view shows ALL of a borough's neighborhoods (no top-8 cap), since it
+     now has the whole panel to itself instead of competing with a nested
+     accordion list. */
+  #explorer-stack { position: relative; display: grid; margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; }
+  #explorer-stack > div { grid-area: 1 / 1; min-width: 0; transition: transform 0.32s ease, opacity 0.28s ease; }
+  #boroughs-view { transform: translateX(0); opacity: 1; }
+  #neighborhoods-view { display: none; transform: translateX(100%); opacity: 0; pointer-events: none; }
+  #explorer-stack.show-nbhd #boroughs-view { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+  #explorer-stack.show-nbhd #neighborhoods-view { transform: translateX(0); opacity: 1; pointer-events: auto; }
+  #all-boroughs-back {
+    font-size: 12px; color: #9aa1b2; cursor: pointer; margin-bottom: 12px;
+    padding-bottom: 10px; border-bottom: 1px solid #333747; user-select: none;
+  }
+  #all-boroughs-back:hover { color: #fff; }
+  #neighborhoods-heading { font-size: 12px; font-weight: 700; color: #e8eaf0; margin-bottom: 12px; }
+
   #back-button {
     font-size: 12px; color: #9aa1b2; cursor: pointer; margin-bottom: 14px;
     padding-bottom: 12px; border-bottom: 1px solid #333747; user-select: none;
@@ -153,19 +171,14 @@
   }
   #tooltip .t-addr { font-weight: 600; margin-bottom: 2px; }
   #tooltip .t-pattern { color: #9aa1b2; }
-  .nbhd-list { display: none; margin: 6px 0 4px 10px; border-left: 1px solid #333747; padding-left: 10px; }
-  .nbhd-list.open { display: block; }
-  .nbhd-row { margin-bottom: 7px; cursor: pointer; }
+  .nbhd-row { margin-bottom: 10px; cursor: pointer; }
   .nbhd-row:hover .nbhd-name { color: #fff; }
-  .nbhd-name { font-size: 11px; color: #b0b4c2; margin-bottom: 3px; display: flex; justify-content: space-between; }
-  .nbhd-name .n { color: #666c7c; }
+  .nbhd-name { font-size: 12px; color: #d0d3dd; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .nbhd-name .n { color: #767c8c; }
   .nbhd-name.selected { color: #fff; }
   .nbhd-name.selected span:first-child { font-weight: 700; }
   .nbhd-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #1a1d27; }
   .nbhd-bar div { height: 100%; }
-
-  .boro-name .caret { color: #666c7c; margin-right: 4px; transition: transform 0.15s; display: inline-block; }
-  .boro-row.open .caret { transform: rotate(90deg); }
 
   #landing {
     position: absolute; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
@@ -207,7 +220,16 @@
           <span id="search-action-clear">&#10005; Clear</span>
         </div>
       </div>
-      <div id="boroughs"></div>
+      <div id="explorer-stack">
+        <div id="boroughs-view">
+          <div id="boroughs"></div>
+        </div>
+        <div id="neighborhoods-view">
+          <div id="all-boroughs-back">&larr; All Boroughs</div>
+          <div id="neighborhoods-heading"></div>
+          <div id="neighborhoods-list"></div>
+        </div>
+      </div>
     </div>
 
     <div id="story-view">
@@ -291,7 +313,7 @@ function updateSelectionPin(d) {
 // both the floating pin and the search bar's "View Story" link.
 function flyToBuilding(d) {
   if (mapRef) mapRef.flyTo({ center: [d.lon, d.lat], zoom: 17, pitch: 60, duration: 1800 });
-  showStory(d.neighborhood);
+  showStory(d.neighborhood, d.boro);
 }
 
 // The search box's left icon has 3 mutually-exclusive states - resting
@@ -354,6 +376,11 @@ function refreshBuildingLayerStyling() {
 function markSelected(d) {
   selectedBuildingId = d.buildingid;
   selectedBuildingData = d;
+  // Selecting a building always syncs the dimming to *its* area, even if you
+  // were browsing a different borough/neighborhood in the directory - so the
+  // map and the panel never show two different areas as "the selected one".
+  selectedBoro = d.boro || null;
+  selectedNeighborhood = d.neighborhood || null;
   refreshBuildingLayerStyling();
   updateSelectionPin(d);
   showSearchSelection(d);
@@ -375,33 +402,52 @@ function clearSelection() {
 // never has to show a long directory list AND a long evidence table at once.
 const SLIDE_MS = 320;
 
-function showStory(neighborhood) {
+// Which borough/neighborhood a Story view was opened from, so its Back
+// button can return to the right place in the drill-down (not just "the
+// top-level borough list") - set by showStory(), read by showExplorer().
+let storyBackTarget = null;
+
+function showStory(neighborhood, boro) {
   const panelStack = document.getElementById('panel-stack');
   const explorerEl = document.getElementById('explorer-view');
   const storyEl = document.getElementById('story-view');
   document.getElementById('back-button').textContent =
     neighborhood ? `← Back to ${neighborhood}` : '← Back to Directory';
+  storyBackTarget = boro ? { boro, neighborhood } : null;
   storyEl.style.display = 'block';
   requestAnimationFrame(() => panelStack.classList.add('show-story'));
   setTimeout(() => { explorerEl.style.display = 'none'; }, SLIDE_MS);
 }
 
 function showExplorer() {
+  // Pre-set the drill-down to the right borough's neighborhood list before
+  // Explorer becomes visible again - happens instantly while still hidden,
+  // so there's no visible flash of the wrong (top-level) list first.
+  if (storyBackTarget) {
+    showNeighborhoodsView(storyBackTarget.boro, false, storyBackTarget.neighborhood);
+  } else {
+    showBoroughsView(false);
+  }
   const panelStack = document.getElementById('panel-stack');
   const explorerEl = document.getElementById('explorer-view');
   const storyEl = document.getElementById('story-view');
   explorerEl.style.display = 'block';
   requestAnimationFrame(() => panelStack.classList.remove('show-story'));
   setTimeout(() => { storyEl.style.display = 'none'; }, SLIDE_MS);
+  // Deferred until Explorer is actually visible/laid out again, otherwise
+  // scrollIntoView on a still-display:none ancestor is a no-op.
+  if (storyBackTarget && storyBackTarget.neighborhood) {
+    requestAnimationFrame(() => {
+      const highlighted = document.querySelector('.nbhd-name.selected');
+      if (highlighted) highlighted.scrollIntoView({ block: 'center' });
+    });
+  }
 }
 
 document.getElementById('back-button').onclick = showExplorer;
 
-// Directory accordion state, shared by every borough/neighborhood row
-// (renderBoroughs, below) - one expanded borough at a time, one bold
-// "currently browsing" name at a time. Independent of building selection,
-// which now lives entirely in the search bar (see showSearchSelection).
-let openRow = null;
+// Directory selection state - one bold "currently browsing" name at a time.
+// Independent of building selection, which lives entirely in the search bar.
 let selectedNameEl = null;
 
 function selectName(el) {
@@ -429,27 +475,77 @@ function buildNbhdRow(boro, n) {
   return nRow;
 }
 
-// Expands a borough row, building its neighborhood list (top 8 by count)
-// on first expand.
-function openBoroRow(boro, row) {
-  const nbhdListEl = row.querySelector('.nbhd-list');
-  if (openRow && openRow !== row) {
-    openRow.classList.remove('open');
-    openRow.querySelector('.nbhd-list').classList.remove('open');
-  }
-  row.classList.add('open');
-  nbhdListEl.classList.add('open');
-  openRow = row;
+// Boroughs <-> Neighborhoods drill-down (nested one level inside Explorer,
+// same sliding technique as the outer Explorer/Story pair). Neighborhoods
+// view always shows ALL of a borough's neighborhoods, not a top-N cut -
+// SoHo/Tribeca (etc.) have relatively few sampled violations so they never
+// made an earlier top-8-by-count list, even though they're real entries.
+function showNeighborhoodsView(boro, animate = true, highlightNeighborhood = null) {
+  const stack = document.getElementById('explorer-stack');
+  const boroughsEl = document.getElementById('boroughs-view');
+  const nbhdEl = document.getElementById('neighborhoods-view');
 
-  if (!nbhdListEl.dataset.built) {
-    nbhdListEl.dataset.built = '1';
-    const boroNbhds = neighborhoodsRef
-      .filter(n => n.boro === boro)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 8);
-    for (const n of boroNbhds) nbhdListEl.appendChild(buildNbhdRow(boro, n));
+  const displayName = boro.charAt(0) + boro.slice(1).toLowerCase();
+  document.getElementById('neighborhoods-heading').textContent = `${displayName} Neighborhoods`;
+  const listEl = document.getElementById('neighborhoods-list');
+  listEl.innerHTML = '';
+  const boroNbhds = neighborhoodsRef.filter(n => n.boro === boro).sort((a, b) => b.total - a.total);
+  for (const n of boroNbhds) {
+    const row = buildNbhdRow(boro, n);
+    listEl.appendChild(row);
+    if (highlightNeighborhood && n.neighborhood === highlightNeighborhood) {
+      selectName(row.querySelector('.nbhd-name'));
+    }
+  }
+
+  selectedBoro = boro;
+  selectedNeighborhood = highlightNeighborhood || null;
+  refreshBuildingLayerStyling();
+
+  // Camera always matches whatever the panel is now showing - a specific
+  // neighborhood if we're highlighting one (e.g. returning from a building's
+  // Story view), otherwise the whole borough.
+  if (mapRef) {
+    const n = highlightNeighborhood && neighborhoodsRef.find(x => x.boro === boro && x.neighborhood === highlightNeighborhood);
+    if (n) {
+      mapRef.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
+    } else {
+      const target = BORO_CENTERS[boro];
+      if (target) mapRef.flyTo({ center: target.center, zoom: target.zoom, pitch: 55, duration: 1500 });
+    }
+  }
+
+  nbhdEl.style.display = 'block';
+  if (animate) {
+    requestAnimationFrame(() => stack.classList.add('show-nbhd'));
+    setTimeout(() => { boroughsEl.style.display = 'none'; }, SLIDE_MS);
+  } else {
+    stack.classList.add('show-nbhd');
+    boroughsEl.style.display = 'none';
   }
 }
+
+function showBoroughsView(animate = true) {
+  const stack = document.getElementById('explorer-stack');
+  const boroughsEl = document.getElementById('boroughs-view');
+  const nbhdEl = document.getElementById('neighborhoods-view');
+
+  selectedBoro = null;
+  selectedNeighborhood = null;
+  refreshBuildingLayerStyling();
+  if (mapRef) mapRef.flyTo({ ...HOME_VIEW, duration: 2200 });
+
+  boroughsEl.style.display = 'block';
+  if (animate) {
+    requestAnimationFrame(() => stack.classList.remove('show-nbhd'));
+    setTimeout(() => { nbhdEl.style.display = 'none'; }, SLIDE_MS);
+  } else {
+    stack.classList.remove('show-nbhd');
+    nbhdEl.style.display = 'none';
+  }
+}
+
+document.getElementById('all-boroughs-back').onclick = () => showBoroughsView();
 
 function renderSimilar(buildingid, pattern, neighborhood) {
   const similarEl = document.getElementById('d-similar');
@@ -537,7 +633,7 @@ function renderSkeleton() {
 function showDetail(d) {
   const myRequestId = ++currentRequestId;
   markSelected(d);
-  showStory(d.neighborhood);
+  showStory(d.neighborhood, d.boro);
 
   renderHeadline(d.pattern, d.scale);
   document.getElementById('d-addr').textContent = d.address;
@@ -621,29 +717,13 @@ function renderBoroughs(data, neighborhoods, map) {
     const row = document.createElement('div');
     row.className = 'boro-row';
     row.innerHTML = `
-      <div class="boro-name"><span><span class="caret">&#9656;</span>${displayName}</span><span class="n">${c.total}</span></div>
-      <div class="boro-bar">${patternBar(c, c.total)}</div>
-      <div class="nbhd-list"></div>`;
+      <div class="boro-name"><span>${displayName}</span><span class="n">${c.total}</span></div>
+      <div class="boro-bar">${patternBar(c, c.total)}</div>`;
 
     const boroNameEl = row.querySelector('.boro-name');
-
-    boroNameEl.onclick = () => {
-      const target = BORO_CENTERS[boro];
-      if (target) map.flyTo({ center: target.center, zoom: target.zoom, pitch: 55, duration: 1500 });
+    row.onclick = () => {
       selectName(boroNameEl);
-
-      if (row !== openRow) {
-        openBoroRow(boro, row);
-        selectedBoro = boro;
-        selectedNeighborhood = null;
-      } else {
-        row.classList.remove('open');
-        row.querySelector('.nbhd-list').classList.remove('open');
-        openRow = null;
-        selectedBoro = null;
-        selectedNeighborhood = null;
-      }
-      refreshBuildingLayerStyling();
+      showNeighborhoodsView(boro);
     };
     container.appendChild(row);
   }
