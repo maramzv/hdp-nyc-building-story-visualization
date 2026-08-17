@@ -39,9 +39,9 @@
   .search-result span:first-child { color: #d0d3dd; }
   #boroughs { margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; }
   .boro-row { margin-bottom: 10px; cursor: pointer; }
-  .boro-row:hover .boro-name { color: #fff; }
   .boro-name { font-size: 12px; color: #d0d3dd; margin-bottom: 4px; display: flex; justify-content: space-between; }
   .boro-name .n { color: #767c8c; }
+  .boro-name.selected span:first-child { font-weight: 700; }
   .boro-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #1a1d27; }
   .boro-bar div { height: 100%; }
 
@@ -93,8 +93,8 @@
   .nbhd-list.open { display: block; }
   .nbhd-row { margin-bottom: 7px; cursor: pointer; }
   .nbhd-name { font-size: 11px; color: #b0b4c2; margin-bottom: 3px; display: flex; justify-content: space-between; }
-  .nbhd-row:hover .nbhd-name { color: #fff; }
   .nbhd-name .n { color: #666c7c; }
+  .nbhd-name.selected span:first-child { font-weight: 700; }
   .nbhd-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #1a1d27; }
   .nbhd-bar div { height: 100%; }
   .boro-name .caret { color: #666c7c; margin-right: 4px; transition: transform 0.15s; display: inline-block; }
@@ -369,6 +369,15 @@ function renderBoroughs(data, neighborhoods, map) {
   const container = document.getElementById('boroughs');
   container.innerHTML = '';
   const order = ["BROOKLYN", "BRONX", "QUEENS", "MANHATTAN", "STATEN ISLAND"];
+  let openRow = null;        // the one boro-row currently expanded (accordion - opening another closes this)
+  let selectedNameEl = null; // whichever boro-name/nbhd-name was last clicked, kept bold until another is
+
+  function selectName(el) {
+    if (selectedNameEl) selectedNameEl.classList.remove('selected');
+    selectedNameEl = el;
+    el.classList.add('selected');
+  }
+
   for (const boro of order) {
     const c = byBoro[boro];
     if (!c) continue;
@@ -381,16 +390,23 @@ function renderBoroughs(data, neighborhoods, map) {
       <div class="nbhd-list"></div>`;
 
     const nbhdListEl = row.querySelector('.nbhd-list');
-    let expanded = false;
+    const boroNameEl = row.querySelector('.boro-name');
 
-    row.querySelector('.boro-name').onclick = () => {
+    boroNameEl.onclick = () => {
       const target = BORO_CENTERS[boro];
       if (target) map.flyTo({ center: target.center, zoom: target.zoom, pitch: 55, duration: 1500 });
+      selectName(boroNameEl);
 
-      expanded = !expanded;
-      row.classList.toggle('open', expanded);
-      nbhdListEl.classList.toggle('open', expanded);
-      if (expanded && !nbhdListEl.dataset.built) {
+      const willExpand = row !== openRow;
+      if (openRow && openRow !== row) {
+        openRow.classList.remove('open');
+        openRow.querySelector('.nbhd-list').classList.remove('open');
+      }
+      row.classList.toggle('open', willExpand);
+      nbhdListEl.classList.toggle('open', willExpand);
+      openRow = willExpand ? row : null;
+
+      if (willExpand && !nbhdListEl.dataset.built) {
         nbhdListEl.dataset.built = '1';
         const boroNbhds = neighborhoods
           .filter(n => n.boro === boro)
@@ -403,9 +419,11 @@ function renderBoroughs(data, neighborhoods, map) {
           nRow.innerHTML = `
             <div class="nbhd-name"><span>${n.neighborhood}</span><span class="n">${n.total}</span></div>
             <div class="nbhd-bar">${patternBar(nCounts, n.total)}</div>`;
+          const nNameEl = nRow.querySelector('.nbhd-name');
           nRow.onclick = (e) => {
             e.stopPropagation();
             map.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
+            selectName(nNameEl);
           };
           nbhdListEl.appendChild(nRow);
         }
