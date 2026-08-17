@@ -333,12 +333,28 @@ function hideSearchSelection() {
   document.getElementById('search-action-row').classList.remove('visible');
 }
 
+// Which borough/neighborhood is currently expanded in the directory (see
+// renderBoroughs) - drives dimming every other building on the map so the
+// selected area actually stands out, since we don't have real boundary
+// polygon geometry cached to draw a highlighted outline instead.
+let selectedBoro = null;
+let selectedNeighborhood = null;
+
+function refreshBuildingLayerStyling() {
+  for (const layer of buildingLayers) {
+    layer.setProps({
+      updateTriggers: {
+        getLineColor: selectedBuildingId,
+        getFillColor: [selectedBoro, selectedNeighborhood],
+      },
+    });
+  }
+}
+
 function markSelected(d) {
   selectedBuildingId = d.buildingid;
   selectedBuildingData = d;
-  for (const layer of buildingLayers) {
-    layer.setProps({ updateTriggers: { getLineColor: selectedBuildingId } });
-  }
+  refreshBuildingLayerStyling();
   updateSelectionPin(d);
   showSearchSelection(d);
 }
@@ -348,9 +364,7 @@ function markSelected(d) {
 function clearSelection() {
   selectedBuildingId = null;
   selectedBuildingData = null;
-  for (const layer of buildingLayers) {
-    layer.setProps({ updateTriggers: { getLineColor: selectedBuildingId } });
-  }
+  refreshBuildingLayerStyling();
   if (selectionPinLayer) selectionPinLayer.setProps({ data: [] });
   hideSearchSelection();
   if (mapRef) mapRef.flyTo({ ...HOME_VIEW, duration: 2200 });
@@ -408,6 +422,9 @@ function buildNbhdRow(boro, n) {
     e.stopPropagation();
     mapRef.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
     selectName(nNameEl);
+    selectedBoro = boro;
+    selectedNeighborhood = n.neighborhood;
+    refreshBuildingLayerStyling();
   };
   return nRow;
 }
@@ -617,11 +634,16 @@ function renderBoroughs(data, neighborhoods, map) {
 
       if (row !== openRow) {
         openBoroRow(boro, row);
+        selectedBoro = boro;
+        selectedNeighborhood = null;
       } else {
         row.classList.remove('open');
         row.querySelector('.nbhd-list').classList.remove('open');
         openRow = null;
+        selectedBoro = null;
+        selectedNeighborhood = null;
       }
+      refreshBuildingLayerStyling();
     };
     container.appendChild(row);
   }
@@ -720,11 +742,44 @@ function bucketBySize(data) {
   })).filter(b => b.data.length > 0);
 }
 
+// PLUTO only gives one coordinate per tax lot, but a single lot can carry
+// multiple distinct HPD BuildingIDs (e.g. separate wings/structures on one
+// lot) - those buildings all land on the exact same [lat, lon], so their
+// columns render fully stacked on top of each other. Whichever one wins the
+// GPU depth/color tie-break is what's visually shown, while a click can
+// correctly resolve to a genuinely different one underneath it - looking
+// like a picking bug (marker on one building's color, data for another)
+// when it's really a coordinate collision. Spread colliding buildings out
+// in a small ring so each one gets its own distinct, clickable position.
+function deduplicateOverlappingCoordinates(data) {
+  const groups = {};
+  for (const d of data) {
+    const key = d.lat.toFixed(6) + ',' + d.lon.toFixed(6);
+    (groups[key] = groups[key] || []).push(d);
+  }
+  const metersPerDegLat = 111320;
+  let collisions = 0;
+  for (const key in groups) {
+    const group = groups[key];
+    if (group.length < 2) continue;
+    collisions += group.length;
+    group.forEach((d, i) => {
+      if (i === 0) return; // first one keeps the real, unmodified coordinate
+      const angle = (2 * Math.PI * i) / group.length;
+      const radius = 12 + Math.floor(i / 8) * 10; // meters; extra rings for large clusters
+      d.lat += (radius * Math.cos(angle)) / metersPerDegLat;
+      d.lon += (radius * Math.sin(angle)) / (metersPerDegLat * Math.cos(d.lat * Math.PI / 180));
+    });
+  }
+  if (collisions) console.log(`${collisions} buildings shared a coordinate with at least one other building; spread apart for rendering/picking.`);
+}
+
 Promise.all([
   fetch('data/map_dataset.json').then(r => r.json()),
   fetch('data/neighborhoods.json').then(r => r.json()),
 ])
   .then(([data, neighborhoods]) => {
+    deduplicateOverlappingCoordinates(data);
     for (const n of neighborhoods) {
       NEIGHBORHOODS_BY_NAME[n.neighborhood] = n;
     }
@@ -803,7 +858,13 @@ Promise.all([
       material: { ambient: 0.35, diffuse: 0.65, shininess: 28, specularColor: [255, 255, 255] },
       getPosition: d => [d.lon, d.lat],
       getElevation: d => Math.max(d.floors, 2),
-      getFillColor: d => PATTERN_COLORS[d.pattern] || [120, 120, 120],
+      getFillColor: d => {
+        const rgb = PATTERN_COLORS[d.pattern] || [120, 120, 120];
+        const inSelection = selectedNeighborhood ? d.neighborhood === selectedNeighborhood
+          : selectedBoro ? d.boro === selectedBoro
+          : true;
+        return [...rgb, inSelection ? 255 : 35];
+      },
       stroked: true,
       getLineColor: d => d.buildingid === selectedBuildingId ? [255, 255, 255, 255] : [0, 0, 0, 0],
       getLineWidth: 1,
