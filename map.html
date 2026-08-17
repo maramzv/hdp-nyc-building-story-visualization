@@ -831,6 +831,31 @@ Promise.all([
       for (const layer of buildingLayers) map.addLayer(layer);
       map.addLayer(selectionPinLayer);
       updateVisibleBuildings();
+
+      // Thin "city limits" line + fading everything outside it (White
+      // Plains, Yonkers, Hackensack, Fort Lee, ...) keeps the map reading
+      // as "NYC and its data" instead of the whole tri-state area.
+      fetch('data/nyc_boundary.geojson').then(r => r.json()).then(boundary => {
+        map.addSource('nyc-boundary', { type: 'geojson', data: boundary });
+        map.addLayer({
+          id: 'nyc-boundary-line',
+          type: 'line',
+          source: 'nyc-boundary',
+          paint: { 'line-color': 'rgba(255,255,255,0.15)', 'line-width': 1 },
+        });
+
+        const suburbLabelLayers = [
+          'place_hamlet', 'place_suburbs', 'place_villages', 'place_town',
+          'place_city_r6', 'place_city_r5', 'place_city_dot_r7', 'place_city_dot_r4',
+          'place_city_dot_r2', 'place_city_dot_z7', 'place_capital_dot_z7',
+        ];
+        const fadeOutsideCity = ['case', ['within', boundary], 1, 0.08];
+        for (const id of suburbLabelLayers) {
+          if (!map.getLayer(id)) continue;
+          map.setPaintProperty(id, 'text-opacity', fadeOutsideCity);
+          map.setPaintProperty(id, 'icon-opacity', fadeOutsideCity);
+        }
+      });
     });
     map.on('moveend', updateVisibleBuildings);
   })

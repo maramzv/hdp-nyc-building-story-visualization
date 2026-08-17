@@ -6,6 +6,7 @@ __pycache__/
 venv/
 data/*.csv
 data/*.json
+data/*.geojson
 !data/.gitkeep
 data/sample2983_backup/
 docs/
