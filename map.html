@@ -37,8 +37,8 @@
   .search-result { padding: 9px 11px; font-size: 11px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
   .search-result:hover { background: rgba(255,255,255,0.06); }
   .search-result span:first-child { color: #d0d3dd; }
-  #summary { margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; font-size: 12px; color: #b5bac9; }
-  #summary .big { font-size: 22px; color: #fff; font-weight: 600; }
+  #breadcrumb { font-size: 11.5px; color: #b0b4c2; margin-top: 12px; padding-top: 12px; border-top: 1px solid #333747; }
+  #search-label { margin-top: 12px; margin-bottom: 8px; }
   #boroughs { margin-top: 14px; padding-top: 14px; border-top: 1px solid #333747; }
   #boroughs h3 { font-size: 12px; margin: 0 0 10px 0; color: #9aa1b2; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
   .boro-row { margin-bottom: 10px; cursor: pointer; }
@@ -111,14 +111,15 @@
 <body>
 <div id="map"></div>
 <div id="panel">
-  <h1>NYC Building Stories</h1>
-  <div class="sub">Colored by recurrence pattern. Click a building for its story.</div>
+  <h1 id="panel-title">NYC Building Stories</h1>
+  <div class="sub">Colored by recurrence pattern.</div>
   <div id="legend"></div>
+  <div id="breadcrumb">Citywide</div>
+  <div class="sub" id="search-label">Click a building for its story or</div>
   <div id="search-wrap">
     <input id="search-box" type="text" placeholder="Search a loaded address..." autocomplete="off">
     <div id="search-results"></div>
   </div>
-  <div id="summary"></div>
   <div id="boroughs"></div>
   <div id="detail">
     <h2 id="d-headline"></h2>
@@ -167,6 +168,24 @@ for (const [k, c] of Object.entries(PATTERN_COLORS)) {
 let NEIGHBORHOODS_BY_NAME = {};
 const EVIDENCE_DISPLAY_LIMIT = 100; // cap DOM rows for buildings with hundreds of records
 let currentRequestId = 0; // guards against a slow earlier click overwriting a newer one
+
+// Populated once the map/layers exist (see Promise.all below); showDetail()
+// uses these to outline the selected building and float a marker above it,
+// so it's identifiable among many similarly-colored/sized neighbors.
+let selectedBuildingId = null;
+let buildingLayers = [];
+let markerLayer = null;
+
+function markSelected(d) {
+  selectedBuildingId = d.buildingid;
+  for (const layer of buildingLayers) {
+    layer.setProps({ updateTriggers: { getLineColor: selectedBuildingId } });
+  }
+  if (markerLayer) {
+    const height = Math.max(d.floors, 2) * 8 + 14; // clear of the column's rendered top
+    markerLayer.setProps({ data: [{ lon: d.lon, lat: d.lat, height }] });
+  }
+}
 
 function renderSimilar(buildingid, pattern, neighborhood) {
   const similarEl = document.getElementById('d-similar');
@@ -224,6 +243,7 @@ function renderEvidence(records) {
  * records live from NYC's API and replaces the narrative/dims/evidence once it resolves. */
 function showDetail(d) {
   const myRequestId = ++currentRequestId;
+  markSelected(d);
 
   document.getElementById('detail').style.display = 'block';
   document.getElementById('d-headline').textContent = d.pattern + ' · ' + d.scale + ' scale';
@@ -279,12 +299,13 @@ const BORO_CENTERS = {
 const PATTERN_ORDER = ["Isolated", "Persistent", "Chronic"];
 
 function renderSummary(data) {
-  const counts = { Isolated: 0, Persistent: 0, Chronic: 0 };
-  for (const d of data) counts[d.pattern] = (counts[d.pattern] || 0) + 1;
-  const pctChronic = ((counts.Chronic / data.length) * 100).toFixed(1);
-  document.getElementById('summary').innerHTML = `
-    <div class="big">${data.length.toLocaleString()}</div>
-    buildings analyzed &middot; ${pctChronic}% show a chronic recurring pattern`;
+  document.getElementById('panel-title').textContent =
+    `NYC Building Stories — ${data.length.toLocaleString()} buildings analyzed`;
+}
+
+function updateBreadcrumb(boroDisplay, nbhdName) {
+  document.getElementById('breadcrumb').textContent =
+    nbhdName ? `${boroDisplay} → ${nbhdName}` : boroDisplay;
 }
 
 function patternBar(counts, total) {
@@ -323,6 +344,7 @@ function renderBoroughs(data, neighborhoods, map) {
     row.querySelector('.boro-name').onclick = () => {
       const target = BORO_CENTERS[boro];
       if (target) map.flyTo({ center: target.center, zoom: target.zoom, pitch: 55, duration: 1500 });
+      updateBreadcrumb(displayName);
 
       expanded = !expanded;
       row.classList.toggle('open', expanded);
@@ -343,6 +365,7 @@ function renderBoroughs(data, neighborhoods, map) {
           nRow.onclick = (e) => {
             e.stopPropagation();
             map.flyTo({ center: [n.lon, n.lat], zoom: 15, pitch: 60, duration: 1800 });
+            updateBreadcrumb(displayName, n.neighborhood);
           };
           nbhdListEl.appendChild(nRow);
         }
@@ -464,7 +487,7 @@ Promise.all([
       }
     };
 
-    const buildingLayers = bucketBySize(data).map((tier, i) => new deck.MapboxLayer({
+    buildingLayers = bucketBySize(data).map((tier, i) => new deck.MapboxLayer({
       id: 'buildings-' + i,
       type: deck.ColumnLayer,
       data: tier.data,
@@ -478,12 +501,35 @@ Promise.all([
       getPosition: d => [d.lon, d.lat],
       getElevation: d => Math.max(d.floors, 2),
       getFillColor: d => PATTERN_COLORS[d.pattern] || [120, 120, 120],
+      stroked: true,
+      getLineColor: d => d.buildingid === selectedBuildingId ? [255, 255, 255, 255] : [0, 0, 0, 0],
+      getLineWidth: 1,
+      lineWidthUnits: 'pixels',
+      lineWidthMinPixels: 2,
+      updateTriggers: { getLineColor: selectedBuildingId },
       onClick,
       onHover,
     }));
 
+    markerLayer = new deck.MapboxLayer({
+      id: 'selected-marker',
+      type: deck.ScatterplotLayer,
+      data: [],
+      getPosition: d => [d.lon, d.lat, d.height],
+      getRadius: 3,
+      radiusUnits: 'meters',
+      radiusMinPixels: 5,
+      radiusMaxPixels: 10,
+      getFillColor: [255, 210, 60, 235],
+      stroked: true,
+      getLineColor: [255, 255, 255, 255],
+      lineWidthMinPixels: 2,
+      pickable: false,
+    });
+
     map.on('load', () => {
       for (const layer of buildingLayers) map.addLayer(layer);
+      map.addLayer(markerLayer);
     });
   })
   .catch(err => {
