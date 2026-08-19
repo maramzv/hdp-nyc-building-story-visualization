@@ -856,19 +856,33 @@ function deduplicateOverlappingCoordinates(data) {
   }
   const metersPerDegLat = 111320;
   let collisions = 0;
+  let largestGroup = 0;
   for (const key in groups) {
     const group = groups[key];
     if (group.length < 2) continue;
     collisions += group.length;
+    largestGroup = Math.max(largestGroup, group.length);
+    // A grid reads as "a cluster of buildings" at any size - large superblock
+    // developments (e.g. Co-op City, ~250 BuildingIDs on one PLUTO lot) would
+    // otherwise spiral outward in visibly artificial concentric rings. Spacing
+    // must scale with the group's own largest footprint, not a fixed value -
+    // a fixed 18m spacing badly overlaps (and breaks picking for) buildings
+    // whose footprint alone is 50m across, as several of Co-op City's are.
+    const maxHalfWidth = Math.max(...group.map(d => Math.sqrt(d.footprint_m2 || 150) / 2));
+    const spacing = maxHalfWidth * 2 + 4; // clear gap between grid cells regardless of size
+    const cols = Math.ceil(Math.sqrt(group.length));
+    const rows = Math.ceil(group.length / cols);
     group.forEach((d, i) => {
       if (i === 0) return; // first one keeps the real, unmodified coordinate
-      const angle = (2 * Math.PI * i) / group.length;
-      const radius = 12 + Math.floor(i / 8) * 10; // meters; extra rings for large clusters
-      d.lat += (radius * Math.cos(angle)) / metersPerDegLat;
-      d.lon += (radius * Math.sin(angle)) / (metersPerDegLat * Math.cos(d.lat * Math.PI / 180));
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const offsetX = (col - (cols - 1) / 2) * spacing;
+      const offsetY = (row - (rows - 1) / 2) * spacing;
+      d.lat += offsetY / metersPerDegLat;
+      d.lon += offsetX / (metersPerDegLat * Math.cos(d.lat * Math.PI / 180));
     });
   }
-  if (collisions) console.log(`${collisions} buildings shared a coordinate with at least one other building; spread apart for rendering/picking.`);
+  if (collisions) console.log(`${collisions} buildings shared a coordinate with at least one other building (largest group: ${largestGroup}); spread apart in a grid for rendering/picking.`);
 }
 
 Promise.all([
