@@ -224,6 +224,13 @@ function buildProfile(buildingid, violations, today) {
   p.engagement = levelEngagement(p.accepted_cert, p.rejected_cert);
   p.pattern = levelPattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count);
   p.backlog_age = levelBacklog(p.max_days_overdue);
+  // Independent of pattern (recurrence) - see the matching comment in
+  // building_story.py for why this isn't folded into levelPattern().
+  p.long_unresolved = (
+    p.recency === "Dormant" &&
+    p.engagement === "Untested" &&
+    (p.backlog_age === "Very aged" || p.backlog_age === "Extreme")
+  );
   return p;
 }
 
@@ -287,7 +294,14 @@ function generateNarrative(p) {
   }
 
   if (p.backlog_age === "Very aged" || p.backlog_age === "Extreme") {
-    parts.push(`The oldest outstanding violation is ${p.max_years_overdue.toFixed(1)} years past its correction deadline.`);
+    if (p.long_unresolved) {
+      parts.push(
+        `The oldest outstanding violation has gone unaddressed for ${p.max_years_overdue.toFixed(1)} years ` +
+        "— no certification has ever been attempted, and there's been no recent activity on record."
+      );
+    } else {
+      parts.push(`The oldest outstanding violation is ${p.max_years_overdue.toFixed(1)} years past its correction deadline.`);
+    }
   }
 
   return parts.join(" ");

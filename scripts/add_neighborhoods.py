@@ -72,17 +72,22 @@ def main():
     nbhd_agg = []
     for (name, boro), buildings in by_nbhd.items():
         counts = defaultdict(int)
+        long_unresolved = 0
         for b in buildings:
             counts[b["pattern"]] += 1
+            if b.get("long_unresolved"):
+                long_unresolved += 1
         lat = sum(b["lat"] for b in buildings) / len(buildings)
         lon = sum(b["lon"] for b in buildings) / len(buildings)
         nbhd_agg.append({
             "neighborhood": name,
             "boro": boro,
             "total": len(buildings),
+            "no_real_defects": counts.get("No real defects", 0),
             "isolated": counts.get("Isolated", 0),
             "persistent": counts.get("Persistent", 0),
             "chronic": counts.get("Chronic", 0),
+            "long_unresolved": long_unresolved,
             "lat": lat,
             "lon": lon,
         })

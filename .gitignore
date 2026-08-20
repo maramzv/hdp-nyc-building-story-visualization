@@ -7,6 +7,7 @@ venv/
 data/*.csv
 data/*.json
 data/*.geojson
+data/*.bak
 !data/.gitkeep
 data/sample2983_backup/
 docs/

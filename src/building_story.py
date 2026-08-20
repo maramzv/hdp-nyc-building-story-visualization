@@ -119,6 +119,7 @@ class BuildingProfile:
     engagement: str = ""
     pattern: str = ""
     backlog_age: str = ""
+    long_unresolved: bool = False
 
 
 def _level_scale(n):
@@ -306,6 +307,16 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     p.engagement = _level_engagement(p.accepted_cert, p.rejected_cert)
     p.pattern = _level_pattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count)
     p.backlog_age = _level_backlog(p.max_days_overdue)
+    # Independent of pattern (recurrence): true when nobody has ever engaged
+    # with the violation, nothing's happened lately, and it's been overdue
+    # for 9.7+ years. Deliberately not folded into `pattern` - it can be true
+    # alongside Chronic/Persistent just as easily as Isolated (the same
+    # recurring defect can also be one nobody's ever certified or revisited).
+    p.long_unresolved = (
+        p.recency == "Dormant"
+        and p.engagement == "Untested"
+        and p.backlog_age in ("Very aged", "Extreme")
+    )
     return p
 
 
@@ -369,6 +380,12 @@ def generate_narrative(p: BuildingProfile) -> str:
 
     # Backlog age
     if p.backlog_age in ("Very aged", "Extreme"):
-        parts.append(f"The oldest outstanding violation is {p.max_years_overdue:.1f} years past its correction deadline.")
+        if p.long_unresolved:
+            parts.append(
+                f"The oldest outstanding violation has gone unaddressed for {p.max_years_overdue:.1f} years "
+                "— no certification has ever been attempted, and there's been no recent activity on record."
+            )
+        else:
+            parts.append(f"The oldest outstanding violation is {p.max_years_overdue:.1f} years past its correction deadline.")
 
     return " ".join(parts)

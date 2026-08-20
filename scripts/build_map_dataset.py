@@ -224,6 +224,7 @@ def main():
             "engagement": p.engagement,
             "pattern": p.pattern,
             "backlog_age": p.backlog_age,
+            "long_unresolved": p.long_unresolved,
             "narrative": generate_narrative(p),
         })
 
