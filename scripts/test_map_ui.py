@@ -36,9 +36,9 @@ def main():
         page.wait_for_selector("#landing-stats .stat", timeout=15000)
         stat_texts = page.locator("#landing-stats .num").all_inner_texts()
         check("landing overlay visible", page.locator("#landing").is_visible())
-        check("3 stat percentages populated", len(stat_texts) == 3, str(stat_texts))
+        check("4 stat percentages populated", len(stat_texts) == 4, str(stat_texts))
         check("stats are real percentages", all("%" in t for t in stat_texts), str(stat_texts))
-        check("legend rows present", page.locator("#landing-legend .sw").count() == 3)
+        check("legend rows present", page.locator("#landing-legend .sw").count() == 4)
 
         print("\nFlow 2: Click Explore, landing disappears")
         page.click("#landing-enter")

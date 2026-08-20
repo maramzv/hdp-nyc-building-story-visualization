@@ -19,6 +19,33 @@ const ADMINISTRATIVE_ORDERNUMBERS = new Set([
   "780", "1507", "700", "1501", "778", "484", "623",
 ]);
 
+const DESCRIPTION_STOPWORDS = new Set([
+  "PROPERLY", "REPAIR", "REPLACE", "REMOVE", "MAINTAIN", "PROVIDE", "CLEAN",
+  "CONDITION", "ADM", "CODE", "HMC", "SECTION", "MDL", "LAW", "REQUIRED",
+  "SIMILAR", "MATERIAL", "ACCORDANCE", "DESCRIBED", "NOTICE", "VIOLATION",
+  "BUILDING", "APARTMENT", "LOCATED", "ENTIRE", "WHICH", "THEREFORE",
+  "SUBJECT", "ABATE", "DEFECTIVE", "BROKEN", "STORY", "FRONT", "REAR",
+]);
+
+function defectKeywords(desc) {
+  if (!desc) return new Set();
+  const words = desc.toUpperCase().match(/[A-Z]{4,}/g) || [];
+  return new Set(words.filter(w => !DESCRIPTION_STOPWORDS.has(w)));
+}
+
+function signatureIsCoherent(descriptions) {
+  const distinct = [...new Set(descriptions.filter(Boolean))];
+  if (distinct.length <= 1) return true;
+  const counts = new Map();
+  for (const d of distinct) {
+    for (const kw of defectKeywords(d)) {
+      counts.set(kw, (counts.get(kw) || 0) + 1);
+    }
+  }
+  if (counts.size === 0) return false;
+  return Math.max(...counts.values()) / distinct.length >= 0.6;
+}
+
 function parseDate(s) {
   if (!s) return null;
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
@@ -61,9 +88,10 @@ function levelEngagement(accepted, rejected) {
   return "Responsive";
 }
 
-function levelPattern(nPersistent, nChronic) {
+function levelPattern(nPersistent, nChronic, realDefectCount) {
   if (nChronic > 0) return "Chronic";
   if (nPersistent > 0) return "Persistent";
+  if (realDefectCount === 0) return "No real defects";
   return "Isolated";
 }
 
@@ -94,12 +122,18 @@ function buildProfile(buildingid, violations, today) {
   const first = violations[0] || {};
   const address = `${first.housenumber || ""} ${first.streetname || ""}, ${first.boro || ""}`;
   const activeCount = deduped.length;
+  const realDefectCount = deduped.filter(v => !ADMINISTRATIVE_ORDERNUMBERS.has(v.ordernumber)).length;
 
   let recentCount = 0, classCRecent = 0, classCTotal = 0;
   let nonComplianceTotal = 0, nonComplianceRecent = 0;
   let acceptedCert = 0, rejectedCert = 0;
   let maxDaysOverdue = 0;
-  const signatures = new Map(); // sigKey -> Map(novid -> earliest date)
+  // Building-wide signatures (same OrderNumber, ANY apartment) - see the
+  // matching comment in building_story.py for why apartment-scoped grouping
+  // was replaced rather than kept alongside this.
+  const signatures = new Map();     // ordernumber -> Map(novid -> earliest date)
+  const sigApartments = new Map();  // ordernumber -> Set(apartments touched)
+  const sigDescriptions = new Map(); // ordernumber -> Map(novid -> description)
 
   for (const v of deduped) {
     const novDate = parseDate(v.novissueddate);
@@ -118,34 +152,44 @@ function buildProfile(buildingid, violations, today) {
     if (status === "FALSE CERTIFICATION" || status === "INVALID CERTIFICATION") rejectedCert++;
 
     const deadline = parseDate(v.newcorrectbydate) || parseDate(v.originalcorrectbydate);
-    if (deadline && deadline < today) {
+    if (deadline && deadline < today && !ACCEPTED_CERT_STATUSES.has(status)) {
       maxDaysOverdue = Math.max(maxDaysOverdue, daysBetween(today, deadline));
     }
 
-    const sigKey = `${v.apartment || ""}|${v.ordernumber || ""}`;
+    const ordernumber = v.ordernumber;
     const novid = v.novid;
-    if (novDate && novid && !ADMINISTRATIVE_ORDERNUMBERS.has(v.ordernumber)) {
-      if (!signatures.has(sigKey)) signatures.set(sigKey, new Map());
-      const novidMap = signatures.get(sigKey);
+    if (novDate && novid && !ADMINISTRATIVE_ORDERNUMBERS.has(ordernumber)) {
+      if (!signatures.has(ordernumber)) {
+        signatures.set(ordernumber, new Map());
+        sigDescriptions.set(ordernumber, new Map());
+      }
+      const novidMap = signatures.get(ordernumber);
       if (!novidMap.has(novid) || novDate < novidMap.get(novid)) {
         novidMap.set(novid, novDate);
+        sigDescriptions.get(ordernumber).set(novid, v.novdescription);
+      }
+      if (v.apartment) {
+        if (!sigApartments.has(ordernumber)) sigApartments.set(ordernumber, new Set());
+        sigApartments.get(ordernumber).add(v.apartment);
       }
     }
   }
 
   const recurringSigs = [];
-  for (const novidMap of signatures.values()) {
+  for (const [ordernumber, novidMap] of signatures.entries()) {
     const dates = [...novidMap.values()];
     if (dates.length >= 2) {
       const spanYears = daysBetween(
         new Date(Math.max(...dates)), new Date(Math.min(...dates))
       ) / 365;
-      recurringSigs.push([dates.length, spanYears]);
+      const breadth = (sigApartments.get(ordernumber) || new Set()).size;
+      const coherent = signatureIsCoherent([...sigDescriptions.get(ordernumber).values()]);
+      recurringSigs.push([dates.length, spanYears, breadth, coherent]);
     }
   }
   recurringSigs.sort((a, b) => b[0] - a[0]);
 
-  const [topSigNotices, topSigSpan] = recurringSigs[0] || [0, 0.0];
+  const [topSigNotices, topSigSpan, topSigBreadth, topSigCoherent] = recurringSigs[0] || [0, 0.0, 0, true];
   const nPersistent = recurringSigs.filter(([n, s]) => n >= 3 && s >= 2).length;
   const nChronic = recurringSigs.filter(([n, s]) => n >= 10 && s >= 5).length;
   const certAttempts = acceptedCert + rejectedCert;
@@ -154,6 +198,7 @@ function buildProfile(buildingid, violations, today) {
     buildingid,
     address,
     active_count: activeCount,
+    real_defect_count: realDefectCount,
     recent_count: recentCount,
     recency_ratio: activeCount ? recentCount / activeCount : 0.0,
     class_c_total: classCTotal,
@@ -168,6 +213,8 @@ function buildProfile(buildingid, violations, today) {
     max_years_overdue: maxDaysOverdue / 365,
     top_sig_notices: topSigNotices,
     top_sig_span_years: topSigSpan,
+    top_sig_breadth: topSigBreadth,
+    top_sig_coherent: topSigCoherent,
     n_persistent_sigs: nPersistent,
     n_chronic_sigs: nChronic,
   };
@@ -175,7 +222,7 @@ function buildProfile(buildingid, violations, today) {
   p.recency = levelRecency(p.recency_ratio);
   p.severity = levelSeverity(p.class_c_rate);
   p.engagement = levelEngagement(p.accepted_cert, p.rejected_cert);
-  p.pattern = levelPattern(p.n_persistent_sigs, p.n_chronic_sigs);
+  p.pattern = levelPattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count);
   p.backlog_age = levelBacklog(p.max_days_overdue);
   return p;
 }
@@ -204,10 +251,27 @@ function generateNarrative(p) {
   }
   parts.push(opener + ".");
 
-  if (p.pattern === "Chronic") {
-    parts.push(`The same defect signature has been cited ${p.top_sig_notices} times over ${p.top_sig_span_years.toFixed(1)} years.`);
-  } else if (p.pattern === "Persistent") {
-    parts.push(`At least one specific problem has recurred ${p.top_sig_notices} times over ${p.top_sig_span_years.toFixed(1)} years.`);
+  if (p.pattern === "No real defects") {
+    parts.push(
+      "None of these are physical defect records — every one is an administrative " +
+      "filing requirement (such as registration or bedbug-report compliance), not a " +
+      "cited problem with the building itself."
+    );
+  }
+
+  if (p.pattern === "Chronic" || p.pattern === "Persistent") {
+    let where;
+    if (p.top_sig_breadth >= 2) {
+      where = `across ${p.top_sig_breadth} different apartments`;
+    } else if (p.top_sig_breadth === 1) {
+      where = "in the same apartment";
+    } else {
+      where = "in the building's common areas";
+    }
+    const what = p.top_sig_coherent
+      ? "The same specific problem"
+      : "The same administrative code — covering several different underlying defects —";
+    parts.push(`${what} has recurred ${p.top_sig_notices} times over ${p.top_sig_span_years.toFixed(1)} years, ${where}.`);
   }
 
   if (p.engagement === "Untested") {

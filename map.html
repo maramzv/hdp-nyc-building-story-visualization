@@ -263,11 +263,13 @@
 
 <script>
 const PATTERN_COLORS = {
+  "No real defects": [80, 170, 70],
   "Isolated":   [64, 216, 200],
   "Persistent": [230, 180, 60],
   "Chronic":    [220, 70, 60],
 };
 const PATTERN_LABELS = {
+  "No real defects": "No real defects — administrative filings only",
   "Isolated":   "Isolated — no recurring violations",
   "Persistent": "Persistent — a violation has recurred",
   "Chronic":    "Chronic — long-running recurring violations",
@@ -463,7 +465,7 @@ function selectName(el) {
 function buildNbhdRow(boro, n) {
   const nRow = document.createElement('div');
   nRow.className = 'nbhd-row';
-  const nCounts = { Isolated: n.isolated, Persistent: n.persistent, Chronic: n.chronic };
+  const nCounts = { "No real defects": n.no_real_defects, Isolated: n.isolated, Persistent: n.persistent, Chronic: n.chronic };
   nRow.innerHTML = `
     <div class="nbhd-name"><span>${n.neighborhood}</span><span class="n">${n.total}</span></div>
     <div class="nbhd-bar">${patternBar(nCounts, n.total)}</div>`;
@@ -556,7 +558,7 @@ function renderSimilar(buildingid, pattern, neighborhood) {
   const similarEl = document.getElementById('d-similar');
   const nbhd = NEIGHBORHOODS_BY_NAME[neighborhood];
   if (nbhd && nbhd.total > 1) {
-    const key = pattern.toLowerCase();
+    const key = pattern.toLowerCase().replace(/ /g, '_');
     const sameCount = (nbhd[key] || 0) - 1; // exclude this building itself
     similarEl.style.display = 'block';
     similarEl.textContent = sameCount > 0
@@ -697,7 +699,7 @@ const BORO_CENTERS = {
   "QUEENS":        { center: [-73.7949, 40.7282], zoom: 11 },
   "STATEN ISLAND": { center: [-74.1502, 40.5795], zoom: 11.5 },
 };
-const PATTERN_ORDER = ["Isolated", "Persistent", "Chronic"];
+const PATTERN_ORDER = ["No real defects", "Isolated", "Persistent", "Chronic"];
 
 function renderSummary(data) {
   document.getElementById('panel-title').textContent =
@@ -719,7 +721,7 @@ function renderBoroughs(data, neighborhoods, map) {
   const byBoro = {};
   for (const d of data) {
     if (!d.boro) continue;
-    byBoro[d.boro] = byBoro[d.boro] || { Isolated: 0, Persistent: 0, Chronic: 0, total: 0 };
+    byBoro[d.boro] = byBoro[d.boro] || { "No real defects": 0, Isolated: 0, Persistent: 0, Chronic: 0, total: 0 };
     byBoro[d.boro][d.pattern] = (byBoro[d.boro][d.pattern] || 0) + 1;
     byBoro[d.boro].total += 1;
   }
@@ -747,7 +749,7 @@ function renderBoroughs(data, neighborhoods, map) {
 }
 
 function renderLanding(data) {
-  const counts = { Isolated: 0, Persistent: 0, Chronic: 0 };
+  const counts = { "No real defects": 0, Isolated: 0, Persistent: 0, Chronic: 0 };
   for (const d of data) counts[d.pattern] = (counts[d.pattern] || 0) + 1;
   document.getElementById('landing-stats').innerHTML = PATTERN_ORDER.map(p => `
     <div class="stat">
