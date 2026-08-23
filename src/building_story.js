@@ -134,6 +134,9 @@ function buildProfile(buildingid, violations, today) {
   const signatures = new Map();     // ordernumber -> Map(novid -> earliest date)
   const sigApartments = new Map();  // ordernumber -> Set(apartments touched)
   const sigDescriptions = new Map(); // ordernumber -> Map(novid -> description)
+  // Distinct calendar dates a REAL defect was cited, regardless of
+  // ordernumber - see the matching comment in building_story.py.
+  const defectVisitDates = new Set();
 
   for (const v of deduped) {
     const novDate = parseDate(v.novissueddate);
@@ -158,6 +161,9 @@ function buildProfile(buildingid, violations, today) {
 
     const ordernumber = v.ordernumber;
     const novid = v.novid;
+    if (novDate && !ADMINISTRATIVE_ORDERNUMBERS.has(ordernumber)) {
+      defectVisitDates.add(novDate.toISOString().slice(0, 10));
+    }
     if (novDate && novid && !ADMINISTRATIVE_ORDERNUMBERS.has(ordernumber)) {
       if (!signatures.has(ordernumber)) {
         signatures.set(ordernumber, new Map());
@@ -194,6 +200,12 @@ function buildProfile(buildingid, violations, today) {
   const nChronic = recurringSigs.filter(([n, s]) => n >= 10 && s >= 5).length;
   const certAttempts = acceptedCert + rejectedCert;
 
+  const nDefectVisits = defectVisitDates.size;
+  const sortedVisitDates = [...defectVisitDates].sort();
+  const defectVisitSpanYears = nDefectVisits >= 2
+    ? daysBetween(new Date(sortedVisitDates[sortedVisitDates.length - 1]), new Date(sortedVisitDates[0])) / 365
+    : 0.0;
+
   const p = {
     buildingid,
     address,
@@ -217,6 +229,8 @@ function buildProfile(buildingid, violations, today) {
     top_sig_coherent: topSigCoherent,
     n_persistent_sigs: nPersistent,
     n_chronic_sigs: nChronic,
+    n_defect_visits: nDefectVisits,
+    defect_visit_span_years: defectVisitSpanYears,
   };
   p.scale = levelScale(p.active_count);
   p.recency = levelRecency(p.recency_ratio);
@@ -239,21 +253,25 @@ function generateNarrative(p) {
 
   let opener;
   if (p.recency === "Active surge") {
-    let recencyPhrase;
-    if (p.recency_ratio >= 0.98) {
-      recencyPhrase = "all issued in roughly the past year";
-    } else if (p.recency_ratio >= 0.90) {
-      recencyPhrase = `nearly all (${p.recent_count} of ${p.active_count}) issued in roughly the past year`;
+    if (p.active_count === 1) {
+      opener = "The one violation on file was issued in the past year";
     } else {
-      recencyPhrase = `the large majority (${p.recent_count} of ${p.active_count}) issued in roughly the past year`;
+      let recencyPhrase;
+      if (p.recency_ratio >= 0.98) {
+        recencyPhrase = "all issued in the past year";
+      } else if (p.recency_ratio >= 0.90) {
+        recencyPhrase = `nearly all (${p.recent_count} of ${p.active_count}) issued in the past year`;
+      } else {
+        recencyPhrase = `the large majority (${p.recent_count} of ${p.active_count}) issued in the past year`;
+      }
+      opener = `A wave of ${p.active_count} violations, ${recencyPhrase}`;
     }
-    opener = `A wave of ${p.active_count} violation${p.active_count !== 1 ? "s" : ""}, ${recencyPhrase}`;
   } else if (p.recency === "Dormant") {
     opener = `${p.active_count} open violation${p.active_count !== 1 ? "s" : ""}, with little to no activity in the past year`;
   } else {
     opener = `${p.active_count} open violations, ${p.recent_count} of them issued in the past year`;
   }
-  if (p.severity === "Severe" || p.severity === "Extreme") {
+  if (p.class_c_total > 0) {
     opener += `, ${p.class_c_total} of them serious (Class C)`;
   }
   parts.push(opener + ".");
@@ -263,6 +281,13 @@ function generateNarrative(p) {
       "None of these are physical defect records — every one is an administrative " +
       "filing requirement (such as registration or bedbug-report compliance), not a " +
       "cited problem with the building itself."
+    );
+  }
+
+  if (p.pattern === "Isolated" && p.n_defect_visits >= 3 && p.defect_visit_span_years >= 0.5) {
+    parts.push(
+      `Different problems have been cited across ${p.n_defect_visits} separate inspections ` +
+      `over ${p.defect_visit_span_years.toFixed(1)} years, even though no single defect has recurred.`
     );
   }
 
@@ -284,6 +309,8 @@ function generateNarrative(p) {
   if (p.engagement === "Untested") {
     if (p.non_compliance_total > 0) {
       parts.push("No certifications have been accepted or rejected on record, though some violations show non-compliance status.");
+    } else {
+      parts.push("No certification has ever been attempted for any of these violations.");
     }
   } else if (p.engagement === "Responsive") {
     parts.push(`Every certification attempt on record has been accepted (${p.accepted_cert} of ${p.accepted_cert + p.rejected_cert}).`);

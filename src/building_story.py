@@ -111,6 +111,8 @@ class BuildingProfile:
     top_sig_coherent: bool        # False = generic code covering several different defects, not one recurring problem
     n_persistent_sigs: int
     n_chronic_sigs: int
+    n_defect_visits: int          # distinct dates a real (non-admin) defect was cited, any ordernumber
+    defect_visit_span_years: float
 
     # Assigned dimension levels
     scale: str = ""
@@ -220,6 +222,12 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     signatures = defaultdict(dict)          # ordernumber -> {novid: nov_date}
     sig_apartments = defaultdict(set)       # ordernumber -> {apartments touched}
     sig_descriptions = defaultdict(dict)    # ordernumber -> {novid: description}
+    # Distinct calendar dates a REAL defect was cited, regardless of whether
+    # it was the same ordernumber recurring - captures a building that keeps
+    # getting hit with a *different* problem at nearly every inspection
+    # (Finding: 588 Gates Ave / 713 Tilden St), which the signature-based
+    # pattern logic above can't see since it only tracks same-code recurrence.
+    defect_visit_dates = set()
 
     for v in deduped:
         nov_date = _parse_date(v.get("novissueddate"))
@@ -252,6 +260,8 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
 
         ordernumber = v.get("ordernumber")
         novid = v.get("novid")
+        if nov_date and ordernumber not in ADMINISTRATIVE_ORDERNUMBERS:
+            defect_visit_dates.add(nov_date.date())
         if nov_date and novid and ordernumber not in ADMINISTRATIVE_ORDERNUMBERS:
             if novid not in signatures[ordernumber] or nov_date < signatures[ordernumber][novid]:
                 signatures[ordernumber][novid] = nov_date
@@ -277,6 +287,12 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     n_chronic = sum(1 for n, s, *_ in recurring_sigs if n >= 10 and s >= 5)
     cert_attempts = accepted_cert + rejected_cert
 
+    n_defect_visits = len(defect_visit_dates)
+    defect_visit_span_years = (
+        (max(defect_visit_dates) - min(defect_visit_dates)).days / 365
+        if n_defect_visits >= 2 else 0.0
+    )
+
     p = BuildingProfile(
         buildingid=buildingid,
         address=addr,
@@ -300,6 +316,8 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         top_sig_coherent=top_sig_coherent,
         n_persistent_sigs=n_persistent,
         n_chronic_sigs=n_chronic,
+        n_defect_visits=n_defect_visits,
+        defect_visit_span_years=defect_visit_span_years,
     )
     p.scale = _level_scale(p.active_count)
     p.recency = _level_recency(p.recency_ratio)
@@ -328,18 +346,21 @@ def generate_narrative(p: BuildingProfile) -> str:
 
     # Scale + recency + severity opener
     if p.recency == "Active surge":
-        if p.recency_ratio >= 0.98:
-            recency_phrase = "all issued in roughly the past year"
-        elif p.recency_ratio >= 0.90:
-            recency_phrase = f"nearly all ({p.recent_count} of {p.active_count}) issued in roughly the past year"
+        if p.active_count == 1:
+            opener = "The one violation on file was issued in the past year"
         else:
-            recency_phrase = f"the large majority ({p.recent_count} of {p.active_count}) issued in roughly the past year"
-        opener = f"A wave of {p.active_count} violation{'s' if p.active_count != 1 else ''}, {recency_phrase}"
+            if p.recency_ratio >= 0.98:
+                recency_phrase = "all issued in the past year"
+            elif p.recency_ratio >= 0.90:
+                recency_phrase = f"nearly all ({p.recent_count} of {p.active_count}) issued in the past year"
+            else:
+                recency_phrase = f"the large majority ({p.recent_count} of {p.active_count}) issued in the past year"
+            opener = f"A wave of {p.active_count} violations, {recency_phrase}"
     elif p.recency == "Dormant":
         opener = f"{p.active_count} open violation{'s' if p.active_count != 1 else ''}, with little to no activity in the past year"
     else:
         opener = f"{p.active_count} open violations, {p.recent_count} of them issued in the past year"
-    if p.severity in ("Severe", "Extreme"):
+    if p.class_c_total > 0:
         opener += f", {p.class_c_total} of them serious (Class C)"
     parts.append(opener + ".")
 
@@ -348,6 +369,16 @@ def generate_narrative(p: BuildingProfile) -> str:
             "None of these are physical defect records — every one is an administrative "
             "filing requirement (such as registration or bedbug-report compliance), not a "
             "cited problem with the building itself."
+        )
+
+    # A building can be Isolated (no single defect ever recurred) and still
+    # keep getting hit with a *different* real problem at nearly every
+    # inspection - the signature-recurrence check above can't see that,
+    # since it only tracks the same ordernumber repeating.
+    if p.pattern == "Isolated" and p.n_defect_visits >= 3 and p.defect_visit_span_years >= 0.5:
+        parts.append(
+            f"Different problems have been cited across {p.n_defect_visits} separate inspections "
+            f"over {p.defect_visit_span_years:.1f} years, even though no single defect has recurred."
         )
 
     # Pattern
@@ -371,6 +402,8 @@ def generate_narrative(p: BuildingProfile) -> str:
     if p.engagement == "Untested":
         if p.non_compliance_total > 0:
             parts.append("No certifications have been accepted or rejected on record, though some violations show non-compliance status.")
+        else:
+            parts.append("No certification has ever been attempted for any of these violations.")
     elif p.engagement == "Responsive":
         parts.append(f"Every certification attempt on record has been accepted ({p.accepted_cert} of {p.accepted_cert + p.rejected_cert}).")
     elif p.engagement == "Resistant":
