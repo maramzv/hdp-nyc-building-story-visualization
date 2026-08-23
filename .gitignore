@@ -14,3 +14,6 @@ docs/
 
 # Claude Code chat transcripts (local records only)
 .claude/save-chat-state.json
+
+.vercel
+.env*
