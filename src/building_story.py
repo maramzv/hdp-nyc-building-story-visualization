@@ -109,6 +109,7 @@ class BuildingProfile:
     top_sig_span_years: float
     top_sig_breadth: int          # distinct apartments the winning signature touched (0 = common-area only)
     top_sig_coherent: bool        # False = generic code covering several different defects, not one recurring problem
+    top_sig_ordernumber: str | None  # OrderNumber of the winning signature - lets the UI pull its actual records instead of re-guessing which ones they are
     n_persistent_sigs: int
     n_chronic_sigs: int
     n_defect_visits: int          # distinct dates a real (non-admin) defect was cited, any ordernumber
@@ -277,11 +278,11 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
             span_years = (max(dates) - min(dates)).days / 365
             breadth = len(sig_apartments[ordernumber])
             coherent = _signature_is_coherent(list(sig_descriptions[ordernumber].values()))
-            recurring_sigs.append((len(dates), span_years, breadth, coherent))
+            recurring_sigs.append((len(dates), span_years, breadth, coherent, ordernumber))
     recurring_sigs.sort(key=lambda x: -x[0])
 
-    top_sig_notices, top_sig_span, top_sig_breadth, top_sig_coherent = (
-        recurring_sigs[0] if recurring_sigs else (0, 0.0, 0, True)
+    top_sig_notices, top_sig_span, top_sig_breadth, top_sig_coherent, top_sig_ordernumber = (
+        recurring_sigs[0] if recurring_sigs else (0, 0.0, 0, True, None)
     )
     n_persistent = sum(1 for n, s, *_ in recurring_sigs if n >= 3 and s >= 2)
     n_chronic = sum(1 for n, s, *_ in recurring_sigs if n >= 10 and s >= 5)
@@ -314,6 +315,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         top_sig_span_years=top_sig_span,
         top_sig_breadth=top_sig_breadth,
         top_sig_coherent=top_sig_coherent,
+        top_sig_ordernumber=top_sig_ordernumber,
         n_persistent_sigs=n_persistent,
         n_chronic_sigs=n_chronic,
         n_defect_visits=n_defect_visits,

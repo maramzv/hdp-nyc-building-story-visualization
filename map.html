@@ -129,20 +129,35 @@
   #back-button:hover { color: #fff; }
   #detail h2 { font-size: 14px; margin: 0 0 6px 0; display: flex; align-items: center; gap: 7px; }
   .pattern-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .lu-badge {
-    font-size: 10.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
-    padding: 3px 7px; border-radius: 4px; flex-shrink: 0;
-    background: rgba(170, 150, 220, 0.16); color: #b6a3e0; border: 1px solid rgba(170, 150, 220, 0.4);
-  }
   #detail .addr { font-size: 13px; color: #e8eaf0; font-weight: 500; margin-bottom: 10px; }
   #detail .narrative { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
   #detail .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .dim-card {
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
-    padding: 8px 10px; display: flex; flex-direction: column; gap: 3px;
+    position: relative; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; user-select: none;
   }
-  .dim-card .dim-k { font-size: 10px; color: #767c8c; text-transform: uppercase; letter-spacing: 0.03em; }
+  .dim-card:hover { border-color: rgba(255,255,255,0.14); }
+  .dim-card .dim-chev { position: absolute; top: 8px; right: 9px; font-size: 9px; color: #666c7c; line-height: 1; transition: transform 0.15s ease; }
+  .dim-card.open .dim-chev { transform: rotate(180deg); }
+  .dim-card .dim-k { font-size: 10px; color: #767c8c; text-transform: uppercase; letter-spacing: 0.03em; padding-right: 14px; }
+  .dim-card .dim-q { display: block; font-size: 11px; color: #9aa1b2; font-style: italic; margin-top: 1px; }
   .dim-card .dim-v { font-size: 12.5px; color: #d0d3dd; font-weight: 600; }
+  .dim-expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.18s ease; }
+  .dim-expand > div { overflow: hidden; }
+  .dim-card.open .dim-expand { grid-template-rows: 1fr; }
+  .expand-inner { padding-top: 8px; margin-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08); }
+  .expand-row { margin-bottom: 6px; }
+  .expand-row:last-child { margin-bottom: 0; }
+  .expand-label { font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; color: #666c7c; margin-bottom: 2px; }
+  .expand-body { font-size: 10.5px; line-height: 1.4; color: #9aa1b2; }
+  .ev-mini { font-size: 9.5px; color: #666c7c; padding: 2px 0; display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid #23273499; }
+  .ev-mini:last-child { border-bottom: none; }
+  .ev-mini .ev-c { flex-shrink: 0; font-weight: 600; }
+  .ev-mini .ev-c.A { color: #e0c14c; }
+  .ev-mini .ev-c.B { color: #e69a4c; }
+  .ev-mini .ev-c.C { color: #e67a6e; }
+  .ev-mini .ev-desc { color: #a8adb9; }
+  .ev-more { font-size: 9px; color: #666c7c; text-align: right; margin-top: 2px; }
   .similar { font-size: 11.5px; color: #9aa1b2; margin-top: 10px; padding: 8px 10px; background: rgba(255,255,255,0.04); border-radius: 6px; line-height: 1.4; }
 
   /* Skeleton loading state: shown the moment a building is selected, while
@@ -634,21 +649,160 @@ function renderEvidence(records) {
   document.getElementById('evidence-toggle').onclick = () => tableEl.classList.toggle('open');
 }
 
-function renderHeadline(pattern, scale, longUnresolved) {
+function renderHeadline(pattern, scale) {
   const color = PATTERN_COLORS[pattern] || [120, 120, 120];
-  const badge = longUnresolved ? '<span class="lu-badge">Long Unresolved</span>' : '';
   document.getElementById('d-headline').innerHTML =
-    `<span class="pattern-dot" style="background: rgb(${color.join(',')})"></span>${pattern} · ${scale} scale${badge}`;
+    `<span class="pattern-dot" style="background: rgb(${color.join(',')})"></span>${pattern} · ${scale} scale`;
 }
 
-function renderDims(profile) {
-  document.getElementById('d-dims').innerHTML = [
-    ['Active violations', profile.active_count],
-    ['Recency', profile.recency],
-    ['Severity', profile.severity],
-    ['Engagement', profile.engagement],
-    ['Backlog age', profile.backlog_age],
-  ].map(([k, v]) => `<div class="dim-card"><span class="dim-k">${k}</span><span class="dim-v">${v}</span></div>`).join('');
+/* ---------- Per-tile "why" detail: meaning / observed number / evidence ----------
+ * Each of the six dimensions gets a tappable detail instead of just a bare
+ * value, so a viewer who's never seen the Building Story Key can still tell
+ * what a label means and why THIS building got it, without leaving the card. */
+
+const CERT_STATUSES = ['NOV CERTIFIED ON TIME', 'NOV CERTIFIED LATE', 'FALSE CERTIFICATION', 'INVALID CERTIFICATION'];
+const STATUS_SHORT = {
+  'NOT COMPLIED WITH': 'Not complied',
+  'NOV SENT OUT': 'Notice sent',
+  'NOV CERTIFIED LATE': 'Certified late',
+  'NOV CERTIFIED ON TIME': 'Certified on time',
+  'INVALID CERTIFICATION': 'Invalid cert',
+  'FALSE CERTIFICATION': 'False cert',
+};
+
+/**
+ * Turns a raw HPD description into a short label with no per-record
+ * hand-editing: strip the citation boilerplate every description opens
+ * with, then try a short list of common defect phrasings against what's
+ * left. Anything the rules don't recognize falls back to the same
+ * stripped-but-otherwise-unedited text shown in the full evidence table,
+ * just without the case numbers.
+ */
+function stripCitation(desc) {
+  return (desc || '').replace(
+    /^(?:HMC ADM CODE:\s*)?(?:§|SECTION)\s*[\d.,\s]+\s*(?:ADMIN\.?\s*CODE|ADM CODE|HMC)?:?\s*/i, ''
+  ).trim();
+}
+
+function sentenceCase(s) {
+  s = s.trim().toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function extractLocation(desc) {
+  const apt = desc.match(/\bAPT\s+([A-Z0-9]+)/i);
+  if (apt) return 'Apt ' + apt[1].toUpperCase();
+  const room = desc.match(/\bAT\s+([A-Z]+(?:\s[A-Z]+){0,2}\s+ROOM)\b/i);
+  return room ? sentenceCase(room[1]) : null;
+}
+
+const DEFECT_RULES = [
+  [/CONSISTING OF (?:A |AN )?([A-Z]+(?:\s[A-Z]+)?)\s+IN\b/i, m => sentenceCase(m[1])],
+  [/EVIDENCE OF (?:A |AN )?([A-Z]+(?:\s[A-Z]+)?)\s+AT\b/i, m => sentenceCase(m[1])],
+  [/REPAIR (?:THE )?(?:LEAKY AND\/OR |BROKEN OR )?DEFECTIVE ([A-Z]+(?:\s[A-Z]+)?)\s+(?:AT|IN)\b/i, m => 'Broken ' + m[1].toLowerCase()],
+  [/PROVIDE HOT WATER/i, () => 'No hot water'],
+  [/DOOR FROM BEING SELF-CLOSING/i, () => 'Door not self-closing'],
+  [/APPROVED AND OPERATIONAL ([A-Z]+(?:\s[A-Z]+)?)\s+DETECT/i, m => sentenceCase(m[1]) + ' detector missing'],
+];
+
+function shortLabel(description) {
+  const cleaned = stripCitation(description);
+  for (const [pattern, toDefect] of DEFECT_RULES) {
+    const m = cleaned.match(pattern);
+    if (m) {
+      const loc = extractLocation(description);
+      return loc ? `${toDefect(m)} · ${loc}` : toDefect(m);
+    }
+  }
+  return cleaned.length > 72 ? cleaned.slice(0, cleaned.lastIndexOf(' ', 72)) + '...' : cleaned;
+}
+
+function evMiniHTML(r) {
+  const status = STATUS_SHORT[r.status] || r.status || '';
+  return `<div class="ev-mini"><span><span class="ev-c ${['A','B','C'].includes(r.class) ? r.class : ''}">${r.class||'?'}</span> · ${r.date||'no date'}</span><span class="ev-desc">${shortLabel(r.description)}${status ? ' — ' + status : ''}</span></div>`;
+}
+
+/**
+ * key = which dimension tile this is. profile = the six-dimension profile.
+ * evidence = deduped display records (buildEvidenceFromRecords output).
+ * records = raw fetched violations (still carry ordernumber, needed only to
+ * find which records belong to Pattern's winning recurring signature -
+ * reuses build_profile's own identification rather than re-guessing it here). */
+function buildDimDetail(key, profile, evidence, records) {
+  let meaning = '', observed = '', rows = [];
+
+  if (key === 'Scale') {
+    meaning = 'How much is currently open — no accounting yet for severity or repeats.';
+    observed = `${profile.active_count} open violation${profile.active_count !== 1 ? 's' : ''} on record right now.`;
+    rows = evidence.slice(0, 3);
+  } else if (key === 'Recency') {
+    meaning = 'Share of open violations filed in just the last year.';
+    rows = evidence.filter(r => r.date && (new Date(r.date) >= new Date(Date.now() - 365 * 86400000)));
+    observed = rows.length
+      ? `${profile.recent_count} of ${profile.active_count} open violations (${Math.round(profile.recency_ratio * 100)}%) were issued in the past year.`
+      : `None of the ${profile.active_count} open violations were issued in the past year — everything here is older.`;
+  } else if (key === 'Severity') {
+    meaning = 'Share of records that are Class C — HPD’s most hazardous tier: heat, hot water, fire, gas.';
+    rows = evidence.filter(r => r.class === 'C');
+    observed = `${profile.class_c_total} of ${profile.active_count} open violations (${Math.round(profile.class_c_rate * 100)}%) are Class C.`;
+  } else if (key === 'Engagement') {
+    meaning = 'Whether the owner’s self-certifications have been accepted or rejected — needs at least 3 attempts before it will judge.';
+    const attempts = profile.accepted_cert + profile.rejected_cert;
+    if (attempts < 3) {
+      observed = 'No certification attempts on record yet — not enough history to judge.';
+      rows = [];
+    } else {
+      observed = `${profile.accepted_cert} accepted, ${profile.rejected_cert} rejected, out of ${attempts} attempts.`;
+      rows = evidence.filter(r => CERT_STATUSES.includes(r.status));
+    }
+  } else if (key === 'Pattern') {
+    meaning = 'Whether one specific problem, in one specific apartment, has come back — not just any two unrelated violations.';
+    if (profile.pattern === 'Isolated' || profile.pattern === 'No real defects' || !profile.top_sig_ordernumber) {
+      observed = 'No recurring signature was found among these violations — every citation traces to a different issue.';
+      rows = [];
+    } else {
+      const where = profile.top_sig_breadth >= 2 ? `across ${profile.top_sig_breadth} different apartments`
+        : profile.top_sig_breadth === 1 ? 'in the same apartment' : 'in the building’s common areas';
+      observed = `The same defect has recurred ${profile.top_sig_notices} times over ${profile.top_sig_span_years.toFixed(1)} years, ${where}.`;
+      const sigRecords = records.filter(v => v.ordernumber === profile.top_sig_ordernumber);
+      rows = buildEvidenceFromRecords(sigRecords);
+    }
+  } else if (key === 'Backlog age') {
+    meaning = 'Age of the single oldest missed repair deadline still on record.';
+    observed = `The oldest missed deadline is ${profile.max_years_overdue.toFixed(1)} years past due.`;
+    rows = evidence.slice(-1);
+  }
+
+  const shown = rows.slice(0, 3);
+  const evidenceHTML = shown.length
+    ? `<div class="expand-row"><div class="expand-label">Underlying evidence</div>${shown.map(evMiniHTML).join('')}${rows.length > shown.length ? `<div class="ev-more">+${rows.length - shown.length} more</div>` : ''}</div>`
+    : `<div class="expand-row"><div class="expand-label">Underlying evidence</div><div class="expand-body" style="font-style:italic;">Nothing to point to for this one.</div></div>`;
+
+  return `<div class="expand-row"><div class="expand-label">What it measures</div><div class="expand-body">${meaning}</div></div>
+    <div class="expand-row"><div class="expand-label">What we observed</div><div class="expand-body">${observed}</div></div>
+    ${evidenceHTML}`;
+}
+
+function renderDims(profile, evidence, records) {
+  const engagementValue = profile.engagement === 'Untested' ? 'No record yet' : profile.engagement;
+  const dims = [
+    ['Scale', 'How much is there?', `${profile.active_count} active violation${profile.active_count !== 1 ? 's' : ''}`],
+    ['Recency', 'Is it happening now?', profile.recency],
+    ['Severity', 'How serious is it?', profile.severity],
+    ['Engagement', 'Has the owner responded?', engagementValue],
+    ['Pattern', 'Does it keep happening?', profile.pattern],
+    ['Backlog age', 'How long unresolved?', profile.backlog_age],
+  ];
+  const dimsEl = document.getElementById('d-dims');
+  dimsEl.innerHTML = dims.map(([k, q, v]) =>
+    `<div class="dim-card"><span class="dim-chev">&#9662;</span><span class="dim-k">${k}</span><span class="dim-q">${q}</span><span class="dim-v">${v}</span><div class="dim-expand"><div><div class="expand-inner">${buildDimDetail(k, profile, evidence, records)}</div></div></div></div>`
+  ).join('');
+  dimsEl.querySelectorAll('.dim-card').forEach(card => {
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('role', 'button');
+    card.addEventListener('click', () => card.classList.toggle('open'));
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); card.classList.toggle('open'); } });
+  });
 }
 
 // Pulsating grey placeholders shown the instant a building is selected,
@@ -659,7 +813,7 @@ function renderSkeleton() {
     `<div class="skel skel-line" style="width:100%"></div>
      <div class="skel skel-line" style="width:92%"></div>
      <div class="skel skel-line" style="width:58%"></div>`;
-  document.getElementById('d-dims').innerHTML = Array.from({ length: 5 }).map(() =>
+  document.getElementById('d-dims').innerHTML = Array.from({ length: 6 }).map(() =>
     `<div class="dim-card"><div class="skel skel-k"></div><div class="skel skel-v"></div></div>`
   ).join('');
 }
@@ -672,7 +826,7 @@ function showDetail(d) {
   markSelected(d);
   showStory(d.neighborhood, d.boro);
 
-  renderHeadline(d.pattern, d.scale, d.long_unresolved);
+  renderHeadline(d.pattern, d.scale);
   document.getElementById('d-addr').textContent = d.address;
   document.getElementById('d-buildingid').textContent = 'BuildingID ' + d.buildingid;
   renderSkeleton();
@@ -694,12 +848,13 @@ function showDetail(d) {
       }
       const profile = buildProfile(d.buildingid, records, new Date());
       const narrative = generateNarrative(profile);
+      const evidence = buildEvidenceFromRecords(records);
 
-      renderHeadline(profile.pattern, profile.scale, profile.long_unresolved);
+      renderHeadline(profile.pattern, profile.scale);
       document.getElementById('d-narrative').textContent = narrative;
-      renderDims(profile);
+      renderDims(profile, evidence, records);
 
-      renderEvidence(buildEvidenceFromRecords(records));
+      renderEvidence(evidence);
     })
     .catch(err => {
       if (myRequestId !== currentRequestId) return;

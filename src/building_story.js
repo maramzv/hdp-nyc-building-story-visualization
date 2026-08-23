@@ -190,12 +190,12 @@ function buildProfile(buildingid, violations, today) {
       ) / 365;
       const breadth = (sigApartments.get(ordernumber) || new Set()).size;
       const coherent = signatureIsCoherent([...sigDescriptions.get(ordernumber).values()]);
-      recurringSigs.push([dates.length, spanYears, breadth, coherent]);
+      recurringSigs.push([dates.length, spanYears, breadth, coherent, ordernumber]);
     }
   }
   recurringSigs.sort((a, b) => b[0] - a[0]);
 
-  const [topSigNotices, topSigSpan, topSigBreadth, topSigCoherent] = recurringSigs[0] || [0, 0.0, 0, true];
+  const [topSigNotices, topSigSpan, topSigBreadth, topSigCoherent, topSigOrdernumber] = recurringSigs[0] || [0, 0.0, 0, true, null];
   const nPersistent = recurringSigs.filter(([n, s]) => n >= 3 && s >= 2).length;
   const nChronic = recurringSigs.filter(([n, s]) => n >= 10 && s >= 5).length;
   const certAttempts = acceptedCert + rejectedCert;
@@ -227,6 +227,7 @@ function buildProfile(buildingid, violations, today) {
     top_sig_span_years: topSigSpan,
     top_sig_breadth: topSigBreadth,
     top_sig_coherent: topSigCoherent,
+    top_sig_ordernumber: topSigOrdernumber,
     n_persistent_sigs: nPersistent,
     n_chronic_sigs: nChronic,
     n_defect_visits: nDefectVisits,
