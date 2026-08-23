@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from building_story import build_profile, generate_narrative  # noqa: E402
+from building_story import build_profile  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TODAY = datetime(2026, 8, 14)
@@ -47,15 +47,17 @@ def main():
             missing += 1
             continue
         p = build_profile(b["buildingid"], viols, TODAY)
+        # recency/severity/engagement/backlog_age/narrative deliberately
+        # excluded - see the matching comment in build_map_dataset.py.
         b["active_count"] = p.active_count
         b["scale"] = p.scale
-        b["recency"] = p.recency
-        b["severity"] = p.severity
-        b["engagement"] = p.engagement
         b["pattern"] = p.pattern
-        b["backlog_age"] = p.backlog_age
         b["long_unresolved"] = p.long_unresolved
-        b["narrative"] = generate_narrative(p)
+        b.pop("recency", None)
+        b.pop("severity", None)
+        b.pop("engagement", None)
+        b.pop("backlog_age", None)
+        b.pop("narrative", None)
         updated += 1
 
     print(f"Refreshed profiles for {updated} buildings ({missing} had no cached violation records, left unchanged)")

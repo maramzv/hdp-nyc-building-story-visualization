@@ -1,0 +1,27 @@
+# Creating this file makes Vercel stop reading .gitignore, so everything
+# needed at runtime has to be explicitly allowed here (map.html loads
+# src/building_story.js and the three data/ files below directly).
+
+# Python offline data pipeline - never runs on Vercel, and its presence
+# (esp. requirements.txt) is what made Vercel try to build a Python
+# environment for what is actually a static site.
+.venv/
+requirements.txt
+scripts/
+notebooks/
+src/*.py
+.env
+.env.example
+
+# Not needed to serve the site
+docs/
+.claude/
+README.md
+
+# data/ holds many large intermediate/raw pipeline files (some 1GB+) that
+# .gitignore normally keeps out of git - only the three files map.html
+# actually fetches should be uploaded.
+data/*
+!data/map_dataset.json
+!data/neighborhoods.json
+!data/nyc_boundary.geojson

@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from socrata_client import soql_query  # noqa: E402
-from building_story import build_profile, generate_narrative  # noqa: E402
+from building_story import build_profile  # noqa: E402
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 TODAY = datetime(2026, 8, 14)
@@ -209,6 +209,13 @@ def main():
         footprint_m2 = (bldgarea_sqft / floors * 0.0929) if bldgarea_sqft else 150.0
         footprint_m2 = max(30.0, min(2500.0, footprint_m2))
 
+        # recency/severity/engagement/backlog_age/narrative are deliberately
+        # NOT included here even though build_profile() computes them - the
+        # map only ever reads those from the live per-building fetch
+        # (buildProfile()/generateNarrative() run client-side after a click,
+        # see showDetail() in map.html), never from this batch file. Keeping
+        # them here was costing 58% of the file's size (narrative alone was
+        # 43%) for data nothing on the page actually displays.
         output.append({
             "buildingid": bid,
             "address": p.address,
@@ -219,13 +226,8 @@ def main():
             "footprint_m2": footprint_m2,
             "active_count": p.active_count,
             "scale": p.scale,
-            "recency": p.recency,
-            "severity": p.severity,
-            "engagement": p.engagement,
             "pattern": p.pattern,
-            "backlog_age": p.backlog_age,
             "long_unresolved": p.long_unresolved,
-            "narrative": generate_narrative(p),
         })
 
     out_path = DATA_DIR / "map_dataset.json"
