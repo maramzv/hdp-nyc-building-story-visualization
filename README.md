@@ -23,14 +23,9 @@ https://data.cityofnewyork.us/Housing-Development/Open-HPD-Violations/csn4-vhvf/
 
 Dataset ID: `csn4-vhvf`
 
-Queried live via the Socrata API. An app token is optional for public reads but increases the request/throttling allowance. Never commit a real token — see [Setup](#setup).
+Queried live via the Socrata API. An app token is optional for public reads but increases the request/throttling allowance. 
 
 ## Current state
-
-Project notes and progress logs are kept locally (not part of this repo — see Project structure below).
-
-<details>
-<summary>Original roadmap (kept for reference — see Current state above for where things actually stand now)</summary>
 
 1. **Data discovery** — schema, scale, date range, building identifiers, violation categories/status. No 2M-row download; aggregate queries only.
 2. **Analytical grain** — how reliably can records be grouped into buildings?
@@ -39,26 +34,3 @@ Project notes and progress logs are kept locally (not part of this repo — see 
 5. **Write-up** — summarizing what the data supports.
 
 </details>
-
-## Setup
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-python -m pip install -r requirements.txt
-```
-
-Copy `.env.example` to `.env` (already present, git-ignored) and paste your Socrata app token:
-
-```
-SOCRATA_APP_TOKEN=your_token_here
-```
-
-## Project structure
-
-```
-notebooks/   exploratory and narrative notebooks
-docs/        project notes and logs (git-ignored, kept local-only)
-src/         shared query/helper code (API client, etc.)
-data/        local cached samples (git-ignored, not the full dataset)
-```

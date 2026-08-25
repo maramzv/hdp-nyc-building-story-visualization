@@ -186,7 +186,10 @@
   .ev-row .ev-desc { color: #c4c7d1; line-height: 1.4; }
   #evidence-more { font-size: 10.5px; color: #666c7c; padding-top: 6px; text-align: center; }
   #d-buildingid { font-size: 10.5px; color: #666c7c; margin-top: 12px; text-align: center; }
-  #status { position: absolute; bottom: 34px; right: 8px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; z-index: 2; }
+  #status { position: absolute; bottom: 34px; right: 8px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; z-index: 2; text-align: right; }
+  #status .status-credit { display: block; margin-top: 3px; font-size: 9.5px; color: #666c7c; line-height: 1.35; }
+  #status .status-credit a { color: #767c8c; }
+  #status .status-credit a:hover { color: #9aa1b2; }
 
   #tooltip {
     position: absolute; display: none; pointer-events: none; z-index: 10;
@@ -1082,7 +1085,9 @@ Promise.all([
       NEIGHBORHOODS_BY_NAME[n.neighborhood] = n;
     }
     window.__TEST_DATA__ = data; // temporary hook for automated testing
-    document.getElementById('status').textContent = data.length.toLocaleString() + ' buildings loaded';
+    document.getElementById('status').innerHTML =
+      `${data.length.toLocaleString()} buildings loaded` +
+      `<span class="status-credit">Data: <a href="http://www.nyc.gov/html/hpd/html/pr/HPD-Open-Data.shtml" target="_blank" rel="noopener">NYC HPD Open Violations</a> &middot; refreshed Aug 14, 2026</span>`;
     renderSummary(data);
     renderLanding(data);
 
