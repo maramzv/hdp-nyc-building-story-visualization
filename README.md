@@ -2,7 +2,7 @@
 
 A data visualization project exploring NYC's **Open HPD Violations** dataset (`csn4-vhvf`) to understand what public housing-violation records reveal about individual buildings and NYC's housing stock as a whole.
 
-This is a data-exploration and storytelling project, not a decision-support product. It stops at **evidence → pattern → story**. It does not make recommendations or tell anyone what to do — that's a separate, later project.
+This is a data-exploration and storytelling project, transforming data to real insights: **evidence → pattern → story**. 
 
 ## The question
 

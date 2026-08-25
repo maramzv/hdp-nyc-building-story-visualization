@@ -30,12 +30,32 @@
   #panel .sub { font-size: 12px; color: #9aa1b2; margin-bottom: 14px; }
   #legend { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
   #legend .row {
-    display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
-    padding: 3px 5px; margin: -3px -5px; border-radius: 5px; transition: background 0.12s, opacity 0.12s;
+    border-radius: 5px; transition: background 0.12s, opacity 0.12s;
   }
-  #legend .row:hover { background: rgba(255,255,255,0.06); }
   #legend.filtering .row:not(.active) { opacity: 0.35; }
+  #legend .row-main {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    padding: 3px 5px; margin: -3px -5px; border-radius: 5px; transition: background 0.12s;
+  }
+  #legend .row-main:hover { background: rgba(255,255,255,0.06); }
   #legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  #legend .row-label { flex: 1; min-width: 0; }
+  #legend .info-btn {
+    flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.18); background: transparent; color: #8a90a0;
+    font-size: 10px; line-height: 1; font-style: italic; font-family: Georgia, serif;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    padding: 0; transition: border-color 0.12s, color 0.12s, background 0.12s;
+  }
+  #legend .info-btn:hover, #legend .info-btn:focus-visible { border-color: rgba(255,255,255,0.5); color: #e8eaf0; background: rgba(255,255,255,0.08); }
+  #legend .row.info-open .info-btn { border-color: #7d8bff; color: #7d8bff; }
+  #legend .legend-expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.18s ease; }
+  #legend .legend-expand > div { overflow: hidden; }
+  #legend .row.info-open .legend-expand { grid-template-rows: 1fr; }
+  #legend .legend-expand-inner {
+    font-size: 11px; line-height: 1.5; color: #9aa1b2;
+    padding: 6px 5px 8px 25px; margin-top: -2px;
+  }
   #search-wrap { position: relative; margin-top: 12px; }
   #search-box {
     width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
@@ -299,10 +319,20 @@ const PATTERN_COLORS = {
 };
 const PATTERN_LABELS = {
   "No real defects": "No real defects — administrative filings only",
-  "Isolated":   "Isolated — few real defects, none recurring",
-  "Widespread": "Widespread — many real defects, none recurring",
-  "Persistent": "Persistent — a violation has recurred",
-  "Chronic":    "Chronic — long-running recurring violations",
+  "Isolated":   "Isolated — a few real defects, none repeated",
+  "Widespread": "Widespread — many real defects, none repeated",
+  "Persistent": "Persistent — the same defect, repeated 3+ times",
+  "Chronic":    "Chronic — the same defect, repeated for years",
+};
+// Longer explanation shown when the legend row's info icon is tapped -
+// same facts as PATTERN_LABELS, just spelled out for someone who wants
+// more than the one-line version before trusting the color.
+const PATTERN_DETAILS = {
+  "No real defects": "Every violation on this building's record is administrative — a late registration filing, a missed bedbug report. No physical defect has ever been cited here.",
+  "Isolated": "This building has real physical defects on record, but only a handful, and none of them has ever been cited a second time.",
+  "Widespread": "This building has many real physical defects on record — more than the large majority of buildings with no repeating pattern — but none of them has ever been cited a second time.",
+  "Persistent": "The same specific defect has been cited 3 or more times over at least 2 years — it kept coming back after being flagged.",
+  "Chronic": "The same specific defect has been cited 10 or more times over at least 5 years — a problem that's gone unresolved for the better part of a decade.",
 };
 
 // All patterns are "active" (shown at full opacity) by default. Clicking a
@@ -317,8 +347,20 @@ for (const [k, c] of Object.entries(PATTERN_COLORS)) {
   const row = document.createElement('div');
   row.className = 'row active';
   row.dataset.pattern = k;
-  row.innerHTML = `<div class="swatch" style="background: rgb(${c.join(',')})"></div><div>${PATTERN_LABELS[k]}</div>`;
-  row.onclick = () => togglePatternFilter(k);
+  row.innerHTML = `
+    <div class="row-main">
+      <div class="swatch" style="background: rgb(${c.join(',')})"></div>
+      <div class="row-label">${PATTERN_LABELS[k]}</div>
+      <button type="button" class="info-btn" aria-label="More about ${k}" aria-expanded="false">i</button>
+    </div>
+    <div class="legend-expand"><div><div class="legend-expand-inner">${PATTERN_DETAILS[k]}</div></div></div>`;
+  row.querySelector('.row-main').addEventListener('click', () => togglePatternFilter(k));
+  const infoBtn = row.querySelector('.info-btn');
+  infoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = row.classList.toggle('info-open');
+    infoBtn.setAttribute('aria-expanded', String(open));
+  });
   legend.appendChild(row);
 }
 
