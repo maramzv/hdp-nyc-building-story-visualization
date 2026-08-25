@@ -386,19 +386,43 @@ def generate_narrative(p: BuildingProfile) -> str:
             "filing requirement (such as registration or bedbug-report compliance), not a "
             "cited problem with the building itself."
         )
-
-    if p.pattern == "Widespread":
+    elif p.pattern == "Isolated" and p.real_defect_count < p.active_count:
+        # active_count includes administrative filings (registration lapses,
+        # bedbug reports); the Isolated label is decided on real_defect_count
+        # alone. Without this, a building can show e.g. "11 open violations"
+        # and "Isolated" with nothing explaining why 11 didn't earn Widespread -
+        # the same kind of hidden-number confusion this whole taxonomy pass
+        # was meant to remove, just from the administrative side instead of
+        # the volume side.
+        admin_count = p.active_count - p.real_defect_count
         parts.append(
-            f"{p.real_defect_count} separate real defects are on record here — none of them the "
-            "same problem recurring, but more than the large majority of buildings with no "
-            "recurring pattern."
+            f"{admin_count} of these are administrative filings, and only "
+            f"{p.real_defect_count} real physical defects are on record."
         )
 
     # A building can be Isolated/Widespread (no single defect ever recurred)
     # and still keep getting hit with a *different* real problem at nearly
     # every inspection - the signature-recurrence check above can't see
-    # that, since it only tracks the same ordernumber repeating.
-    if p.pattern in ("Isolated", "Widespread") and p.n_defect_visits >= 3 and p.defect_visit_span_years >= 0.5:
+    # that, since it only tracks the same ordernumber repeating. Widespread
+    # additionally earns a volume comparison ("more than most buildings ever
+    # see") - true by construction, since Widespread only fires at/above the
+    # calibrated p75 cutoff (REAL_DEFECT_WIDESPREAD_THRESHOLD). That claim
+    # would be FALSE for an Isolated building, which sits at or below that
+    # same cutoff, so it's deliberately never made there.
+    has_visit_detail = p.n_defect_visits >= 3 and p.defect_visit_span_years >= 0.5
+    if p.pattern == "Widespread":
+        if has_visit_detail:
+            parts.append(
+                f"None of these problems have repeated, but different issues have been cited "
+                f"across {p.n_defect_visits} separate inspections over {p.defect_visit_span_years:.1f} "
+                "years, more than most buildings ever see."
+            )
+        else:
+            parts.append(
+                f"None of these problems have repeated, but {p.real_defect_count} separate real "
+                "defects are on record here, more than most buildings ever see."
+            )
+    elif p.pattern == "Isolated" and has_visit_detail:
         parts.append(
             f"Different problems have been cited across {p.n_defect_visits} separate inspections "
             f"over {p.defect_visit_span_years:.1f} years, even though no single defect has recurred."
@@ -425,7 +449,12 @@ def generate_narrative(p: BuildingProfile) -> str:
     if p.engagement == "Untested":
         if p.non_compliance_total > 0:
             parts.append("No certifications have been accepted or rejected on record, though some violations show non-compliance status.")
-        else:
+        elif not p.long_unresolved:
+            # long_unresolved requires engagement == "Untested" by definition
+            # (see its computation above), so whenever it's true the backlog
+            # sentence below already says "no certification has ever been
+            # attempted" - saying it again here would be a literal repeat of
+            # the same words, not just a related fact.
             parts.append("No certification has ever been attempted for any of these violations.")
     elif p.engagement == "Responsive":
         parts.append(f"Every certification attempt on record has been accepted ({p.accepted_cert} of {p.accepted_cert + p.rejected_cert}).")

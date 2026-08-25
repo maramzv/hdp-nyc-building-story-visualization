@@ -287,17 +287,35 @@ function generateNarrative(p) {
       "filing requirement (such as registration or bedbug-report compliance), not a " +
       "cited problem with the building itself."
     );
-  }
-
-  if (p.pattern === "Widespread") {
+  } else if (p.pattern === "Isolated" && p.real_defect_count < p.active_count) {
+    // See the matching comment in building_story.py.
+    const adminCount = p.active_count - p.real_defect_count;
     parts.push(
-      `${p.real_defect_count} separate real defects are on record here — none of them the ` +
-      "same problem recurring, but more than the large majority of buildings with no " +
-      "recurring pattern."
+      `${adminCount} of these are administrative filings, and only ` +
+      `${p.real_defect_count} real physical defects are on record.`
     );
   }
 
-  if ((p.pattern === "Isolated" || p.pattern === "Widespread") && p.n_defect_visits >= 3 && p.defect_visit_span_years >= 0.5) {
+  // Widespread earns a volume comparison ("more than most buildings ever
+  // see") - true by construction since Widespread only fires at/above the
+  // calibrated p75 cutoff. That claim would be FALSE for an Isolated
+  // building (at or below that same cutoff), so it's never made there -
+  // see the matching comment in building_story.py.
+  const hasVisitDetail = p.n_defect_visits >= 3 && p.defect_visit_span_years >= 0.5;
+  if (p.pattern === "Widespread") {
+    if (hasVisitDetail) {
+      parts.push(
+        "None of these problems have repeated, but different issues have been cited " +
+        `across ${p.n_defect_visits} separate inspections over ${p.defect_visit_span_years.toFixed(1)} ` +
+        "years, more than most buildings ever see."
+      );
+    } else {
+      parts.push(
+        `None of these problems have repeated, but ${p.real_defect_count} separate real ` +
+        "defects are on record here, more than most buildings ever see."
+      );
+    }
+  } else if (p.pattern === "Isolated" && hasVisitDetail) {
     parts.push(
       `Different problems have been cited across ${p.n_defect_visits} separate inspections ` +
       `over ${p.defect_visit_span_years.toFixed(1)} years, even though no single defect has recurred.`
@@ -322,7 +340,8 @@ function generateNarrative(p) {
   if (p.engagement === "Untested") {
     if (p.non_compliance_total > 0) {
       parts.push("No certifications have been accepted or rejected on record, though some violations show non-compliance status.");
-    } else {
+    } else if (!p.long_unresolved) {
+      // See the matching comment in building_story.py.
       parts.push("No certification has ever been attempted for any of these violations.");
     }
   } else if (p.engagement === "Responsive") {

@@ -31,6 +31,8 @@ TEST_BUILDING_IDS = [
     "222118", "155406",                                  # active surge, responsive
     "49694", "842723", "8623",                            # extreme severity / extreme backlog
     "9835", "133539", "8228", "285601", "300043",         # Widespread (9+ real defects, no recurring signature)
+    "805595",                                              # Isolated with administrative filings mixed in
+    "324815",                                              # Widespread, long_unresolved (Engagement/Backlog overlap)
 ]
 
 
