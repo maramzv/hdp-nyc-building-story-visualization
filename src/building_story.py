@@ -449,12 +449,7 @@ def generate_narrative(p: BuildingProfile) -> str:
     if p.engagement == "Untested":
         if p.non_compliance_total > 0:
             parts.append("No certifications have been accepted or rejected on record, though some violations show non-compliance status.")
-        elif not p.long_unresolved:
-            # long_unresolved requires engagement == "Untested" by definition
-            # (see its computation above), so whenever it's true the backlog
-            # sentence below already says "no certification has ever been
-            # attempted" - saying it again here would be a literal repeat of
-            # the same words, not just a related fact.
+        else:
             parts.append("No certification has ever been attempted for any of these violations.")
     elif p.engagement == "Responsive":
         parts.append(f"Every certification attempt on record has been accepted ({p.accepted_cert} of {p.accepted_cert + p.rejected_cert}).")
@@ -463,14 +458,14 @@ def generate_narrative(p: BuildingProfile) -> str:
     elif p.engagement == "Mixed engagement":
         parts.append(f"Certification attempts have had mixed outcomes ({p.accepted_cert} accepted, {p.rejected_cert} rejected).")
 
-    # Backlog age
+    # Backlog age. Deliberately one sentence regardless of long_unresolved -
+    # that flag requires Dormant recency and Untested engagement by
+    # definition, both of which the opener and Engagement sentence above
+    # have *already* stated by the time this runs, in whatever wording their
+    # own branch used. A long_unresolved-specific variant here inevitably
+    # re-says one of those facts in different words no matter how it's
+    # phrased - that's what kept resurfacing as "yet another" duplicate.
     if p.backlog_age in ("Very aged", "Extreme"):
-        if p.long_unresolved:
-            parts.append(
-                f"The oldest outstanding violation has gone unaddressed for {p.max_years_overdue:.1f} years "
-                "— no certification has ever been attempted, and there's been no recent activity on record."
-            )
-        else:
-            parts.append(f"The oldest outstanding violation is {p.max_years_overdue:.1f} years past its correction deadline.")
+        parts.append(f"The oldest outstanding violation is {p.max_years_overdue:.1f} years past its correction deadline.")
 
     return " ".join(parts)

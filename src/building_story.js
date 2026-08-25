@@ -340,8 +340,7 @@ function generateNarrative(p) {
   if (p.engagement === "Untested") {
     if (p.non_compliance_total > 0) {
       parts.push("No certifications have been accepted or rejected on record, though some violations show non-compliance status.");
-    } else if (!p.long_unresolved) {
-      // See the matching comment in building_story.py.
+    } else {
       parts.push("No certification has ever been attempted for any of these violations.");
     }
   } else if (p.engagement === "Responsive") {
@@ -352,15 +351,10 @@ function generateNarrative(p) {
     parts.push(`Certification attempts have had mixed outcomes (${p.accepted_cert} accepted, ${p.rejected_cert} rejected).`);
   }
 
+  // One sentence regardless of long_unresolved - see the matching comment
+  // in building_story.py.
   if (p.backlog_age === "Very aged" || p.backlog_age === "Extreme") {
-    if (p.long_unresolved) {
-      parts.push(
-        `The oldest outstanding violation has gone unaddressed for ${p.max_years_overdue.toFixed(1)} years ` +
-        "— no certification has ever been attempted, and there's been no recent activity on record."
-      );
-    } else {
-      parts.push(`The oldest outstanding violation is ${p.max_years_overdue.toFixed(1)} years past its correction deadline.`);
-    }
+    parts.push(`The oldest outstanding violation is ${p.max_years_overdue.toFixed(1)} years past its correction deadline.`);
   }
 
   return parts.join(" ");
