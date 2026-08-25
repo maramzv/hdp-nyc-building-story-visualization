@@ -15,6 +15,14 @@ ACCEPTED_CERT_STATUSES = {"NOV CERTIFIED ON TIME", "NOV CERTIFIED LATE"}
 P90_OVERDUE_DAYS = 9.7 * 365
 P99_OVERDUE_DAYS = 25.2 * 365
 MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT = 3
+# p75 of real_defect_count within the Isolated/Widespread candidate pool
+# (buildings with >=1 real defect and no Persistent/Chronic recurring
+# signature; n=106,669, calibrated via scripts/calibrate_real_defect_count.py
+# against the full citywide dataset). Below this, a building's real-defect
+# count is still typical for that pool; at/above it, a building sits in the
+# top quarter by volume even though nothing has ever recurred - "Isolated"
+# stopped being an honest word for a building with, say, 35 one-off defects.
+REAL_DEFECT_WIDESPREAD_THRESHOLD = 9
 
 # OrderNumbers that represent recurring ADMINISTRATIVE/FILING obligations rather
 # than physical defects. These recur by design (e.g. annually, for every subject
@@ -181,6 +189,12 @@ def _level_pattern(n_persistent, n_chronic, real_defect_count):
         # Isolated building with one small real problem - same bucket today,
         # different reality.
         return "No real defects"
+    if real_defect_count >= REAL_DEFECT_WIDESPREAD_THRESHOLD:
+        # A building can rack up dozens of never-repeating real defects and
+        # still pass every recurrence check - "Isolated" (a word that reads
+        # as "one thing happened") shouldn't cover that. Split purely on
+        # volume; severity is already its own dimension, not folded in here.
+        return "Widespread"
     return "Isolated"
 
 
@@ -373,11 +387,18 @@ def generate_narrative(p: BuildingProfile) -> str:
             "cited problem with the building itself."
         )
 
-    # A building can be Isolated (no single defect ever recurred) and still
-    # keep getting hit with a *different* real problem at nearly every
-    # inspection - the signature-recurrence check above can't see that,
-    # since it only tracks the same ordernumber repeating.
-    if p.pattern == "Isolated" and p.n_defect_visits >= 3 and p.defect_visit_span_years >= 0.5:
+    if p.pattern == "Widespread":
+        parts.append(
+            f"{p.real_defect_count} separate real defects are on record here — none of them the "
+            "same problem recurring, but more than the large majority of buildings with no "
+            "recurring pattern."
+        )
+
+    # A building can be Isolated/Widespread (no single defect ever recurred)
+    # and still keep getting hit with a *different* real problem at nearly
+    # every inspection - the signature-recurrence check above can't see
+    # that, since it only tracks the same ordernumber repeating.
+    if p.pattern in ("Isolated", "Widespread") and p.n_defect_visits >= 3 and p.defect_visit_span_years >= 0.5:
         parts.append(
             f"Different problems have been cited across {p.n_defect_visits} separate inspections "
             f"over {p.defect_visit_span_years:.1f} years, even though no single defect has recurred."

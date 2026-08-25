@@ -293,12 +293,14 @@
 const PATTERN_COLORS = {
   "No real defects": [80, 170, 70],
   "Isolated":   [64, 216, 200],
+  "Widespread": [66, 133, 224],
   "Persistent": [230, 180, 60],
   "Chronic":    [220, 70, 60],
 };
 const PATTERN_LABELS = {
   "No real defects": "No real defects — administrative filings only",
-  "Isolated":   "Isolated — no recurring violations",
+  "Isolated":   "Isolated — few real defects, none recurring",
+  "Widespread": "Widespread — many real defects, none recurring",
   "Persistent": "Persistent — a violation has recurred",
   "Chronic":    "Chronic — long-running recurring violations",
 };
@@ -512,7 +514,7 @@ function selectName(el) {
 function buildNbhdRow(boro, n) {
   const nRow = document.createElement('div');
   nRow.className = 'nbhd-row';
-  const nCounts = { "No real defects": n.no_real_defects, Isolated: n.isolated, Persistent: n.persistent, Chronic: n.chronic };
+  const nCounts = { "No real defects": n.no_real_defects, Isolated: n.isolated, Widespread: n.widespread, Persistent: n.persistent, Chronic: n.chronic };
   nRow.innerHTML = `
     <div class="nbhd-name"><span>${n.neighborhood}</span><span class="n">${n.total}</span></div>
     <div class="nbhd-bar">${patternBar(nCounts, n.total)}</div>`;
@@ -761,7 +763,9 @@ function buildDimDetail(key, profile, evidence, records) {
   } else if (key === 'Pattern') {
     meaning = 'Whether one specific problem, in one specific apartment, has come back — not just any two unrelated violations.';
     if (profile.pattern === 'Isolated' || profile.pattern === 'No real defects' || !profile.top_sig_ordernumber) {
-      observed = 'No recurring signature was found among these violations — every citation traces to a different issue.';
+      observed = profile.pattern === 'Widespread'
+        ? `No recurring signature was found among these violations — every citation traces to a different issue. But there are ${profile.real_defect_count} separate real defects on record, more than the large majority of buildings with no recurring pattern.`
+        : 'No recurring signature was found among these violations — every citation traces to a different issue.';
       rows = [];
     } else {
       const where = profile.top_sig_breadth >= 2 ? `across ${profile.top_sig_breadth} different apartments`
@@ -887,7 +891,7 @@ const BORO_CENTERS = {
   "QUEENS":        { center: [-73.7949, 40.7282], zoom: 11 },
   "STATEN ISLAND": { center: [-74.1502, 40.5795], zoom: 11.5 },
 };
-const PATTERN_ORDER = ["No real defects", "Isolated", "Persistent", "Chronic"];
+const PATTERN_ORDER = ["No real defects", "Isolated", "Widespread", "Persistent", "Chronic"];
 
 function renderSummary(data) {
   document.getElementById('panel-title').textContent =
@@ -909,7 +913,7 @@ function renderBoroughs(data, neighborhoods, map) {
   const byBoro = {};
   for (const d of data) {
     if (!d.boro) continue;
-    byBoro[d.boro] = byBoro[d.boro] || { "No real defects": 0, Isolated: 0, Persistent: 0, Chronic: 0, total: 0 };
+    byBoro[d.boro] = byBoro[d.boro] || { "No real defects": 0, Isolated: 0, Widespread: 0, Persistent: 0, Chronic: 0, total: 0 };
     byBoro[d.boro][d.pattern] = (byBoro[d.boro][d.pattern] || 0) + 1;
     byBoro[d.boro].total += 1;
   }
@@ -937,7 +941,7 @@ function renderBoroughs(data, neighborhoods, map) {
 }
 
 function renderLanding(data) {
-  const counts = { "No real defects": 0, Isolated: 0, Persistent: 0, Chronic: 0 };
+  const counts = { "No real defects": 0, Isolated: 0, Widespread: 0, Persistent: 0, Chronic: 0 };
   for (const d of data) counts[d.pattern] = (counts[d.pattern] || 0) + 1;
   document.getElementById('landing-stats').innerHTML = PATTERN_ORDER.map(p => `
     <div class="stat">

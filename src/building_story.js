@@ -14,6 +14,9 @@
 const NON_COMPLIANCE_STATUSES = new Set(["NOT COMPLIED WITH", "FALSE CERTIFICATION", "INVALID CERTIFICATION"]);
 const ACCEPTED_CERT_STATUSES = new Set(["NOV CERTIFIED ON TIME", "NOV CERTIFIED LATE"]);
 const MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT = 3;
+// p75 of real_defect_count within the Isolated/Widespread candidate pool -
+// see the matching comment in building_story.py.
+const REAL_DEFECT_WIDESPREAD_THRESHOLD = 9;
 
 const ADMINISTRATIVE_ORDERNUMBERS = new Set([
   "780", "1507", "700", "1501", "778", "484", "623",
@@ -92,6 +95,7 @@ function levelPattern(nPersistent, nChronic, realDefectCount) {
   if (nChronic > 0) return "Chronic";
   if (nPersistent > 0) return "Persistent";
   if (realDefectCount === 0) return "No real defects";
+  if (realDefectCount >= REAL_DEFECT_WIDESPREAD_THRESHOLD) return "Widespread";
   return "Isolated";
 }
 
@@ -285,7 +289,15 @@ function generateNarrative(p) {
     );
   }
 
-  if (p.pattern === "Isolated" && p.n_defect_visits >= 3 && p.defect_visit_span_years >= 0.5) {
+  if (p.pattern === "Widespread") {
+    parts.push(
+      `${p.real_defect_count} separate real defects are on record here — none of them the ` +
+      "same problem recurring, but more than the large majority of buildings with no " +
+      "recurring pattern."
+    );
+  }
+
+  if ((p.pattern === "Isolated" || p.pattern === "Widespread") && p.n_defect_visits >= 3 && p.defect_visit_span_years >= 0.5) {
     parts.push(
       `Different problems have been cited across ${p.n_defect_visits} separate inspections ` +
       `over ${p.defect_visit_span_years.toFixed(1)} years, even though no single defect has recurred.`

@@ -85,6 +85,7 @@ def main():
             "total": len(buildings),
             "no_real_defects": counts.get("No real defects", 0),
             "isolated": counts.get("Isolated", 0),
+            "widespread": counts.get("Widespread", 0),
             "persistent": counts.get("Persistent", 0),
             "chronic": counts.get("Chronic", 0),
             "long_unresolved": long_unresolved,
