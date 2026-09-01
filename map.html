@@ -252,7 +252,9 @@
        new      white    - notice sent, deadline not passed / info-only
        warn     amber    - past deadline, not certified (non-compliant / no access)
        stalled  d.grey   - past deadline, never certified, frozen 2+ yrs
-       rejected red      - owner certified, HPD rejected it as false/invalid */
+       rejected red      - owner certified, HPD rejected it as false/invalid
+       admin    purple   - a filing/registration/posting obligation, not a
+                           repair, that the owner never met (by OrderNumber) */
   .tl-item::before {
     content: ""; position: absolute; left: 0; top: 4px; width: 10px; height: 10px; border-radius: 50%;
     background: #ffffff; border: 2px solid #ffffff;
@@ -263,6 +265,7 @@
   .tl-item.tl-warn::before     { border-color: #f0b429; background: #f0b429; }
   .tl-item.tl-stalled::before  { border-color: #5b646c; background: #5b646c; }
   .tl-item.tl-rejected::before { border-color: #d84b4b; background: #d84b4b; }
+  .tl-item.tl-admin::before    { border-color: #a06fd6; background: #a06fd6; }
   .tl-head { cursor: pointer; user-select: none; font-size: 11px; line-height: 1.4; }
   .tl-head:hover { color: #fff; }
   .tl-when { display: block; font-size: 9.5px; color: #767c8c; }
@@ -274,6 +277,7 @@
   .tl-note.t-warn { color: #f0b429; }
   .tl-note.t-stalled { color: #939ba3; }
   .tl-note.t-rejected { color: #d84b4b; }
+  .tl-note.t-admin { color: #b98ae0; }
   .tl-note.miss-t { color: #f0b429; }
   .tl-chev { color: #666c7c; font-size: 9px; }
   .tl-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.16s ease; }
@@ -298,6 +302,7 @@
   #tl-key i.k-warn { background: #f0b429; }
   #tl-key i.k-stalled { background: #5b646c; }
   #tl-key i.k-rejected { background: #d84b4b; }
+  #tl-key i.k-admin { background: #a06fd6; }
   .ev-row { font-size: 11px; padding: 7px 0; border-bottom: 1px solid #23273499; }
   .ev-row .ev-top { display: flex; justify-content: space-between; color: #8a90a0; margin-bottom: 2px; }
   .ev-row .ev-class-A { color: #e0c14c; font-weight: 600; }
@@ -857,7 +862,7 @@ const TL_STATUS_SHORT = {
   'SECOND NO ACCESS TO RE-INSPECT VIOLATION': 'inspector could not get access (2nd try)',
   'NOTICE OF ISSUANCE SENT TO TENANT': 'notice sent to tenant',
   'DEFECT LETTER ISSUED': 'defect letter issued',
-  'CIV14 MAILED': 'civil penalty notice mailed',
+  'CIV14 MAILED': 'civil penalty issued (housing court)',
   'VIOLATION OPEN': 'open, not yet processed',
   'VIOLATION REOPEN': 'reopened',
   'INFO NOV SENT OUT': 'informational notice (no deadline)',
@@ -872,34 +877,50 @@ const CERT_OK = ['NOV CERTIFIED ON TIME', 'NOV CERTIFIED LATE'];
 // One of six dot states per notice. Each also gets a text label (below), so
 // colour is never the only cue. See the CSS block for the palette rationale.
 const TL_FIXED = new Set(['NOV CERTIFIED ON TIME', 'NOV CERTIFIED LATE', 'LEAD DOCS SUBMITTED, ACCEPTABLE', 'COMPLIED IN ACCESS AREA']);
-const TL_REJECTED = new Set(['FALSE CERTIFICATION', 'INVALID CERTIFICATION', 'LEAD DOCS SUBMITTED, NOT ACCEPTABLE', 'CERTIFICATION POSTPONMENT DENIED']);
+const TL_REJECTED = new Set(['FALSE CERTIFICATION', 'INVALID CERTIFICATION', 'LEAD DOCS SUBMITTED, NOT ACCEPTABLE']);
 const TL_FOLLOW = new Set(['VIOLATION WILL BE REINSPECTED', 'DEFECT LETTER ISSUED', 'CIV14 MAILED', 'CERTIFICATION POSTPONMENT GRANTED', 'DOWNGRADE PENDING INSPECTION']);
+// Order codes that are a filing / registration / posting obligation, not a
+// physical repair. Decided by OrderNumber, not status - an unfiled building
+// registration is the owner's failure whatever its currentstatus reads. Kept
+// to the unambiguous five (dropped the lead-paint and inspection-visit
+// compliance certs - those can touch real conditions).
+const TL_ADMIN = {
+  '780':  'building registration never filed',
+  '1507': 'annual bedbug report not filed',
+  '700':  'required smoke-detector notice never posted',
+  '1501': 'required carbon-monoxide notice never posted',
+  '778':  'required registration sign never posted',
+};
 function classifyNotice(n) {
   const s = (n.status || '').toUpperCase();
-  if (TL_FIXED.has(s)) return { state: 'good', word: 'fixed' };
-  if (TL_REJECTED.has(s)) return { state: 'rejected', word: 'certification rejected' };
-  if (TL_FOLLOW.has(s)) return { state: 'follow', word: tlStatusShort(n.status) };
-  if (s.includes('NO ACCESS TO RE') || s === 'NOT COMPLIED WITH')
-    return { state: 'warn', word: tlStatusShort(n.status) };
-
-  // "Newly issued" (white) is a genuine recency call: issued in the last year,
-  // OR a correction deadline that's still in the future. An old notice - even
-  // one with no deadline at all, like a Class I informational notice - is not
-  // "new"; it's just sitting on file.
   const issuedTs = n.nov ? new Date(n.nov).getTime() : (n.insp ? new Date(n.insp).getTime() : 0);
+  const yrsOpen = issuedTs ? Math.floor((Date.now() - issuedTs) / (365 * 86400000)) : 0;
   const recent = issuedTs && (Date.now() - issuedTs) / 86400000 <= 365;
   const deadlineAhead = n.correctBy && new Date(n.correctBy) > new Date();
 
+  if (TL_FIXED.has(s))
+    return { state: 'good', word: n.certified ? `certified fixed in ${n.certified.slice(0, 4)}` : 'certified fixed' };
+  if (TL_REJECTED.has(s))
+    return { state: 'rejected', word: 'certification rejected as false or invalid' };
+  if (TL_ADMIN[n.ordernumber])
+    return { state: 'admin', word: TL_ADMIN[n.ordernumber] + (yrsOpen >= 1 ? ` — ${yrsOpen} yr${yrsOpen > 1 ? 's' : ''}` : '') };
+  if (TL_FOLLOW.has(s))
+    return { state: 'follow', word: tlStatusShort(n.status) };
+  if (s.includes('NO ACCESS TO RE') || s === 'NOT COMPLIED WITH' || s === 'CERTIFICATION POSTPONMENT DENIED')
+    return { state: 'warn', word: tlStatusShort(n.status) };
+
+  // "Newly issued" (white) is a genuine recency call: under a year old, or a
+  // correction deadline still ahead. An older notice - deadline-less ones
+  // included - is not "new".
   if (s === 'INFO NOV SENT OUT') {
     return recent
       ? { state: 'new', word: 'informational notice (no deadline)' }
-      : { state: 'stalled', word: 'informational notice — no deadline, on file since issued' };
+      : { state: 'stalled', word: `informational notice, on file since ${(n.nov || '').slice(0, 4) || 'issue'}` };
   }
-  // NOV SENT OUT / NOTICE SENT TO TENANT / VIOLATION OPEN | REOPEN / unknown:
   if (recent || deadlineAhead)
     return { state: 'new', word: n.correctBy ? 'notice sent, deadline not yet due' : 'notice sent' };
   if (n.missed && n.frozen && n.yearsFrozen >= 2)
-    return { state: 'stalled', word: `stalled — no activity in ${n.yearsFrozen.toFixed(0)} yrs` };
+    return { state: 'stalled', word: `no activity recorded since ${(n.statusDate || n.nov || '').slice(0, 4)}` };
   if (n.missed)
     return { state: 'warn', word: 'past deadline, no response' };
   return { state: 'stalled', word: 'on file, no correction deadline recorded' };
@@ -942,6 +963,7 @@ function buildTimeline(records) {
       id, sortKey: nov || insp || '', year: yearOf(nov || insp),
       insp, approved: f.approveddate || null, nov, correctBy, certifyBy, certified,
       status, statusDate, apts, cls, defect, count: items.length,
+      ordernumber: f.ordernumber || null,
       isCertified, missed, frozen, yearsFrozen,
     };
     const c = classifyNotice(n);
@@ -974,7 +996,13 @@ function renderTimeline(records) {
     body.innerHTML = `<div id="timeline-empty">No dated notices to lay out for this building.</div>`;
     return;
   }
-  const shown = notices.slice(0, TIMELINE_NOTICE_LIMIT);
+  // Pre-1990 notices are almost always stale database artifacts, not live
+  // conditions (a 1965 inspection still marked "open"). Don't render them as
+  // individual dots implying they're current - roll them into one line.
+  const legacy = notices.filter(n => /^\d{4}$/.test(n.year) && +n.year < 1990);
+  const modern = notices.filter(n => !legacy.includes(n));
+
+  const shown = modern.slice(0, TIMELINE_NOTICE_LIMIT);
   const groups = [];
   let curYear = null, list = [];
   for (const n of shown) {
@@ -993,12 +1021,13 @@ function renderTimeline(records) {
     <span><i class="k-warn"></i>overdue</span>
     <span><i class="k-stalled"></i>stalled</span>
     <span><i class="k-rejected"></i>cert. rejected</span>
+    <span><i class="k-admin"></i>paperwork not filed</span>
   </div>`;
 
   body.innerHTML = key + groups.map(([yr, items]) => `
     <div class="tl-year">${yr}</div>
     <ul class="tl-list">${items.map(n => {
-      const noteTone = { good: 't-good', follow: 't-follow', new: 't-new', warn: 't-warn', stalled: 't-stalled', rejected: 't-rejected' }[n.state] || '';
+      const noteTone = { good: 't-good', follow: 't-follow', new: 't-new', warn: 't-warn', stalled: 't-stalled', rejected: 't-rejected', admin: 't-admin' }[n.state] || '';
       const where = n.apts.length > 1 ? `${n.apts.length} apts`
         : n.apts.length === 1 ? `Apt ${n.apts[0]}` : 'common area';
       const note = `<span class="tl-note ${noteTone}">— ${n.stateWord}</span>`;
@@ -1010,8 +1039,15 @@ function renderTimeline(records) {
         <div class="tl-detail"><div>${noticeDetailHTML(n)}</div></div>
       </li>`;
     }).join('')}</ul>
-  `).join('') + (notices.length > shown.length
-    ? `<div id="timeline-more">showing the ${shown.length} most recent of ${notices.length} notices</div>` : '');
+  `).join('')
+  + (legacy.length ? `<div class="tl-year">Before 1990</div>
+      <ul class="tl-list"><li class="tl-item tl-stalled"><div class="tl-head">
+        <span class="tl-when">${legacy[legacy.length - 1].year}–${legacy[0].year} &middot; ${legacy.length} legacy record${legacy.length > 1 ? 's' : ''}</span>
+        <span class="tl-what">still on file, decades past any deadline</span>
+        <span class="tl-note t-stalled">&mdash; likely stale database records, not live conditions</span>
+      </div></li></ul>` : '')
+  + (modern.length > shown.length
+    ? `<div id="timeline-more">showing the ${shown.length} most recent of ${modern.length} notices</div>` : '');
 
   body.querySelectorAll('.tl-head').forEach(h => {
     h.onclick = () => h.parentElement.classList.toggle('open');
