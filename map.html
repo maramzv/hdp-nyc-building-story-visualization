@@ -16,7 +16,32 @@
     padding: 16px 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
     max-height: calc(100vh - 32px); overflow-y: auto;
     scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.2) transparent; /* Firefox */
+    transition: width 0.32s ease;
   }
+  /* On a single building the panel carries dense small text (6 dimension
+     cards, the timeline) that was cramped and low-contrast at 320px - widen
+     it and bump the type up while a building is open, back to 320 for the
+     directory. */
+  #panel.wide { width: 468px; }
+  #panel.wide #detail h2 { font-size: 15px; }
+  #panel.wide #detail .addr { font-size: 14px; }
+  #panel.wide #detail .narrative { font-size: 14px; line-height: 1.6; }
+  #panel.wide #story-tabs button { font-size: 12.5px; }
+  #panel.wide .dim-card .dim-k { font-size: 11px; }
+  #panel.wide .dim-card .dim-q { font-size: 12px; }
+  #panel.wide .dim-card .dim-v { font-size: 14px; }
+  #panel.wide .expand-label { font-size: 8.5px; }
+  #panel.wide .expand-body { font-size: 12px; }
+  #panel.wide .ev-mini { font-size: 10.5px; }
+  #panel.wide .similar { font-size: 12.5px; }
+  #panel.wide #evidence-intro,
+  #panel.wide #evidence-count { font-size: 12.5px; }
+  #panel.wide .ev-row { font-size: 12px; }
+  #panel.wide .tl-year { font-size: 13px; }
+  #panel.wide .tl-head { font-size: 12px; }
+  #panel.wide .tl-when { font-size: 10.5px; }
+  #panel.wide .tl-detail dl { font-size: 11px; }
+  #panel.wide #tl-key { font-size: 10.5px; }
   #panel::-webkit-scrollbar, #evidence-table::-webkit-scrollbar, #search-results::-webkit-scrollbar { width: 6px; }
   #panel::-webkit-scrollbar-track, #evidence-table::-webkit-scrollbar-track, #search-results::-webkit-scrollbar-track { background: transparent; }
   #panel::-webkit-scrollbar-thumb, #evidence-table::-webkit-scrollbar-thumb, #search-results::-webkit-scrollbar-thumb {
@@ -152,6 +177,9 @@
   #detail .addr { font-size: 13px; color: #e8eaf0; font-weight: 500; margin-bottom: 10px; }
   #detail .narrative { font-size: 13px; line-height: 1.5; margin-bottom: 12px; }
   #detail .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+  /* An opened card spans both columns so its detail gets full width and the
+     grid reflows cleanly instead of leaving a tall gap in the other column. */
+  #detail .dims .dim-card.open { grid-column: 1 / -1; }
   .dim-card {
     position: relative; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
     padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; user-select: none;
@@ -621,6 +649,7 @@ function showStory(neighborhood, boro) {
     neighborhood ? `← Back to ${neighborhood}` : '← Back to Directory';
   storyBackTarget = boro ? { boro, neighborhood } : null;
   storyEl.style.display = 'block';
+  document.getElementById('panel').classList.add('wide');
   requestAnimationFrame(() => panelStack.classList.add('show-story'));
   setTimeout(() => { explorerEl.style.display = 'none'; }, SLIDE_MS);
 }
@@ -638,6 +667,7 @@ function showExplorer() {
   const explorerEl = document.getElementById('explorer-view');
   const storyEl = document.getElementById('story-view');
   explorerEl.style.display = 'block';
+  document.getElementById('panel').classList.remove('wide');
   requestAnimationFrame(() => panelStack.classList.remove('show-story'));
   setTimeout(() => { storyEl.style.display = 'none'; }, SLIDE_MS);
   // Deferred until Explorer is actually visible/laid out again, otherwise
