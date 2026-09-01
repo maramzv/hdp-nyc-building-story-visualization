@@ -456,10 +456,35 @@ function updateSelectionPin(d) {
   selectionPinLayer.setProps({ data: [{ ...d, height: roofHeight }] });
 }
 
+// Camera framing for a single building: zoom out and flatten pitch enough
+// that the whole 3D column fits top-to-bottom with its roof pin in view,
+// scaled to the building's real height (a 40-storey tower at zoom 17 / pitch
+// 60 fills the frame and pushes the pin off-screen). Also lifts the target
+// with top-padding so the column has headroom, and keeps clear of the panel.
+function buildingCamera(d) {
+  const h = Math.max(d.floors || 3, 2) * 8; // metres, matches ColumnLayer elevation
+  // Fit the whole column + roof pin in view: back the zoom off and flatten
+  // the pitch as the building gets taller. A 30-storey tower needs a wider,
+  // more top-down shot than a walkup or its roof pin sits off the top edge.
+  const zoom = h <= 55 ? 17
+             : h <= 110 ? 16.3
+             : h <= 190 ? 15.7
+             : h <= 300 ? 15.2
+             : 14.8;
+  const pitch = h <= 55 ? 52
+              : h <= 130 ? 46
+              : h <= 240 ? 39
+              : 33;
+  return { center: [d.lon, d.lat], zoom, pitch, duration: 1700 };
+}
+function flyToBuildingCamera(map, d) {
+  (map || mapRef) && (map || mapRef).flyTo(buildingCamera(d));
+}
+
 // Flies the camera back to a building and shows its Story view - used by
 // both the floating pin and the search bar's "View Story" link.
 function flyToBuilding(d) {
-  if (mapRef) mapRef.flyTo({ center: [d.lon, d.lat], zoom: 17, pitch: 60, duration: 1800 });
+  flyToBuildingCamera(mapRef, d);
   showStory(d.neighborhood, d.boro);
 }
 
@@ -1221,7 +1246,7 @@ function renderSearch(data, map) {
   const results = document.getElementById('search-results');
 
   function selectMatch(m) {
-    map.flyTo({ center: [m.lon, m.lat], zoom: 17, pitch: 60, duration: 1800 });
+    flyToBuildingCamera(map, m);
     showDetail(m);
     results.classList.remove('open');
     box.value = m.address;
@@ -1381,7 +1406,7 @@ Promise.all([
 
     const onClick = (info) => {
       if (!info.object) return;
-      map.flyTo({ center: [info.object.lon, info.object.lat], zoom: 17, pitch: 60, duration: 1800 });
+      flyToBuildingCamera(map, info.object);
       showDetail(info.object);
     };
     const onHover = (info) => {
