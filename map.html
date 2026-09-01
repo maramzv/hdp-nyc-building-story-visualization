@@ -216,19 +216,37 @@
   .tl-list::before { content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 2px; background: #2b3444; }
   .tl-item { position: relative; padding: 0 0 10px 18px; }
   .tl-item:last-child { padding-bottom: 2px; }
+  /* Timeline dot = one Notice of Violation, colored by where it stands.
+     Six states; each also carries a text label, so colour is never alone.
+       good     green   - owner certified, HPD accepted
+       follow   blue    - HPD still working it (reinspection / defect letter / penalty)
+       new      grey ring - notice sent, deadline not passed / info-only
+       warn     amber   - past deadline, not certified (non-compliant / no access)
+       stalled  d.grey  - past deadline, never certified, frozen 2+ yrs
+       rejected red     - owner certified, HPD rejected it as false/invalid */
   .tl-item::before {
     content: ""; position: absolute; left: 0; top: 4px; width: 10px; height: 10px; border-radius: 50%;
-    background: #14161e; border: 2px solid #5c6472;
+    background: #14161e; border: 2px solid #8894a0;
   }
-  .tl-item.miss::before { border-color: #e67a6e; background: #e67a6e; }
-  .tl-item.done::before { border-color: #63c088; background: #63c088; }
-  .tl-item.fresh::before { border-color: #00b2a9; background: #00b2a9; }
+  .tl-item.tl-good::before     { border-color: #2bb24d; background: #2bb24d; }
+  .tl-item.tl-follow::before   { border-color: #4b93d1; background: #4b93d1; }
+  .tl-item.tl-new::before      { border-color: #8894a0; background: #14161e; }
+  .tl-item.tl-warn::before     { border-color: #f0b429; background: #f0b429; }
+  .tl-item.tl-stalled::before  { border-color: #5b646c; background: #5b646c; }
+  .tl-item.tl-rejected::before { border-color: #d84b4b; background: #d84b4b; }
+  /* issued in the last ~90 days - state may still change */
+  .tl-item.tl-recent::before { box-shadow: 0 0 0 2px #14161e, 0 0 0 3.5px #00b2a9; }
   .tl-head { cursor: pointer; user-select: none; font-size: 11px; line-height: 1.4; }
   .tl-head:hover { color: #fff; }
   .tl-when { display: block; font-size: 9.5px; color: #767c8c; }
   .tl-what { color: #c4c7d1; }
   .tl-note { color: #767c8c; }
-  .tl-note.miss-t { color: #e67a6e; }
+  .tl-note.t-good { color: #4fc06a; }
+  .tl-note.t-follow { color: #6aa8de; }
+  .tl-note.t-warn { color: #f0b429; }
+  .tl-note.t-stalled { color: #939ba3; }
+  .tl-note.t-rejected { color: #e86b6b; }
+  .tl-note.miss-t { color: #f0b429; }
   .tl-chev { color: #666c7c; font-size: 9px; }
   .tl-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.16s ease; }
   .tl-detail > div { overflow: hidden; }
@@ -240,6 +258,18 @@
   .tl-detail dd.done-t { color: #63c088; }
   #timeline-empty { font-size: 11.5px; color: #767c8c; font-style: italic; padding: 6px 0; }
   #timeline-more { font-size: 10px; color: #666c7c; text-align: center; padding: 6px 0 2px; }
+  #tl-key {
+    display: flex; flex-wrap: wrap; gap: 4px 11px; font-size: 9.5px; color: #767c8c;
+    padding: 0 0 10px; margin-bottom: 6px; border-bottom: 1px solid #23273499;
+  }
+  #tl-key span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  #tl-key i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  #tl-key i.k-good { background: #2bb24d; }
+  #tl-key i.k-follow { background: #4b93d1; }
+  #tl-key i.k-new { background: #14161e; border: 1.5px solid #8894a0; }
+  #tl-key i.k-warn { background: #f0b429; }
+  #tl-key i.k-stalled { background: #5b646c; }
+  #tl-key i.k-rejected { background: #d84b4b; }
   .ev-row { font-size: 11px; padding: 7px 0; border-bottom: 1px solid #23273499; }
   .ev-row .ev-top { display: flex; justify-content: space-between; color: #8a90a0; margin-bottom: 2px; }
   .ev-row .ev-class-A { color: #e0c14c; font-weight: 600; }
@@ -783,23 +813,51 @@ function renderEvidence(records) {
 const TIMELINE_NOTICE_LIMIT = 150; // covers all notices for all but a handful of extreme buildings
 const TL_STATUS_SHORT = {
   'NOT COMPLIED WITH': 'not complied with',
-  'NOV SENT OUT': 'notice sent, nothing since',
-  'NOV CERTIFIED LATE': 'owner certified (late)',
-  'NOV CERTIFIED ON TIME': 'owner certified (on time)',
+  'NOV SENT OUT': 'notice of violation sent to owner',
+  'NOV CERTIFIED LATE': 'owner certified fixed (late)',
+  'NOV CERTIFIED ON TIME': 'owner certified fixed (on time)',
   'INVALID CERTIFICATION': 'certification rejected as invalid',
   'FALSE CERTIFICATION': 'certification rejected as false',
+  'CERTIFICATION POSTPONMENT DENIED': 'extension request denied',
+  'CERTIFICATION POSTPONMENT GRANTED': 'extension granted',
   'VIOLATION WILL BE REINSPECTED': 'reinspection scheduled',
   'FIRST NO ACCESS TO RE- INSPECT VIOLATION': 'inspector could not get access',
   'FIRST NO ACCESS TO RE-INSPECT VIOLATION': 'inspector could not get access',
   'SECOND NO ACCESS TO RE- INSPECT VIOLATION': 'inspector could not get access (2nd try)',
-  'NOTICE OF ISSUANCE SENT TO TENANT': 'notice sent, nothing since',
+  'SECOND NO ACCESS TO RE-INSPECT VIOLATION': 'inspector could not get access (2nd try)',
+  'NOTICE OF ISSUANCE SENT TO TENANT': 'notice sent to tenant',
   'DEFECT LETTER ISSUED': 'defect letter issued',
+  'CIV14 MAILED': 'civil penalty notice mailed',
   'VIOLATION OPEN': 'open, not yet processed',
-  'INFO NOV SENT OUT': 'informational notice sent',
+  'VIOLATION REOPEN': 'reopened',
+  'INFO NOV SENT OUT': 'informational notice (no deadline)',
+  'LEAD DOCS SUBMITTED, ACCEPTABLE': 'lead-paint docs accepted',
+  'LEAD DOCS SUBMITTED, NOT ACCEPTABLE': 'lead-paint docs rejected',
+  'COMPLIED IN ACCESS AREA': 'complied (accessible area)',
 };
 const tlStatusShort = raw => TL_STATUS_SHORT[raw]
   || (raw ? raw.toLowerCase().replace(/re-\s+inspect/g, 're-inspect') : 'unknown');
 const CERT_OK = ['NOV CERTIFIED ON TIME', 'NOV CERTIFIED LATE'];
+
+// One of six dot states per notice. Each also gets a text label (below), so
+// colour is never the only cue. See the CSS block for the palette rationale.
+const TL_FIXED = new Set(['NOV CERTIFIED ON TIME', 'NOV CERTIFIED LATE', 'LEAD DOCS SUBMITTED, ACCEPTABLE', 'COMPLIED IN ACCESS AREA']);
+const TL_REJECTED = new Set(['FALSE CERTIFICATION', 'INVALID CERTIFICATION', 'LEAD DOCS SUBMITTED, NOT ACCEPTABLE', 'CERTIFICATION POSTPONMENT DENIED']);
+const TL_FOLLOW = new Set(['VIOLATION WILL BE REINSPECTED', 'DEFECT LETTER ISSUED', 'CIV14 MAILED', 'CERTIFICATION POSTPONMENT GRANTED', 'DOWNGRADE PENDING INSPECTION']);
+function classifyNotice(n) {
+  const s = (n.status || '').toUpperCase();
+  if (TL_FIXED.has(s)) return { state: 'good', word: 'fixed' };
+  if (TL_REJECTED.has(s)) return { state: 'rejected', word: 'certification rejected' };
+  if (TL_FOLLOW.has(s)) return { state: 'follow', word: tlStatusShort(n.status) };
+  if (s.includes('NO ACCESS TO RE') || s === 'NOT COMPLIED WITH')
+    return { state: 'warn', word: tlStatusShort(n.status) };
+  if (s === 'INFO NOV SENT OUT') return { state: 'new', word: 'informational notice' };
+  // NOV SENT OUT / NOTICE SENT TO TENANT / VIOLATION OPEN|REOPEN / unknown:
+  if (!n.missed) return { state: 'new', word: n.correctBy ? 'notice sent, deadline not yet due' : 'notice sent' };
+  if (n.frozen && n.yearsFrozen >= 2)
+    return { state: 'stalled', word: `stalled — no activity in ${n.yearsFrozen.toFixed(0)} yrs` };
+  return { state: 'warn', word: 'past deadline, no response' };
+}
 const fmtDay = s => {
   if (!s) return null;
   const d = new Date(s.slice(0, 10) + 'T00:00:00Z');
@@ -834,12 +892,16 @@ function buildTimeline(records) {
       (new Date(statusDate) - new Date(nov)) / 86400000 <= 21;
     const yearsFrozen = (frozen && statusDate)
       ? (now - new Date(statusDate)) / (365 * 86400000) : 0;
-    notices.push({
+    const n = {
       id, sortKey: nov || insp || '', year: yearOf(nov || insp),
       insp, approved: f.approveddate || null, nov, correctBy, certifyBy, certified,
       status, statusDate, apts, cls, defect, count: items.length,
       isCertified, missed, frozen, yearsFrozen,
-    });
+    };
+    const c = classifyNotice(n);
+    n.state = c.state; n.stateWord = c.word;
+    n.recent = !!(nov && (now - new Date(nov)) / 86400000 <= 90);
+    notices.push(n);
   }
   notices.sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
   return notices;
@@ -879,20 +941,23 @@ function renderTimeline(records) {
   }
   if (list.length) groups.push([curYear, list]);
 
-  body.innerHTML = groups.map(([yr, items]) => `
+  const key = `<div id="tl-key">
+    <span><i class="k-good"></i>fixed</span>
+    <span><i class="k-follow"></i>in follow-up</span>
+    <span><i class="k-new"></i>newly issued</span>
+    <span><i class="k-warn"></i>overdue</span>
+    <span><i class="k-stalled"></i>stalled</span>
+    <span><i class="k-rejected"></i>cert. rejected</span>
+  </div>`;
+
+  body.innerHTML = key + groups.map(([yr, items]) => `
     <div class="tl-year">${yr}</div>
     <ul class="tl-list">${items.map(n => {
-      const cls = n.frozen ? 'miss' : n.isCertified ? 'done' :
-        (n.sortKey && new Date(n.sortKey) > new Date(Date.now() - 120 * 86400000) ? 'fresh' : '');
+      const noteTone = { good: 't-good', follow: 't-follow', warn: 't-warn', stalled: 't-stalled', rejected: 't-rejected', new: '' }[n.state] || '';
       const where = n.apts.length > 1 ? `${n.apts.length} apts`
         : n.apts.length === 1 ? `Apt ${n.apts[0]}` : 'common area';
-      let note = '';
-      if (n.frozen && n.yearsFrozen >= 1) {
-        note = `<span class="tl-note miss-t">— no activity in ${n.yearsFrozen.toFixed(0)} yr${n.yearsFrozen >= 2 ? 's' : ''}</span>`;
-      } else if (n.status) {
-        note = `<span class="tl-note">— ${tlStatusShort(n.status)}</span>`;
-      }
-      return `<li class="tl-item ${cls}">
+      const note = `<span class="tl-note ${noteTone}">— ${n.stateWord}</span>`;
+      return `<li class="tl-item tl-${n.state}${n.recent ? ' tl-recent' : ''}">
         <div class="tl-head">
           <span class="tl-when">${fmtDay(n.nov || n.insp) || 'undated'} &middot; ${where}${n.cls ? ' &middot; Class ' + n.cls : ''}</span>
           <span class="tl-what">${n.defect || 'violation'}</span> ${note} <span class="tl-chev">&#9662;</span>
