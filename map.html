@@ -881,12 +881,28 @@ function classifyNotice(n) {
   if (TL_FOLLOW.has(s)) return { state: 'follow', word: tlStatusShort(n.status) };
   if (s.includes('NO ACCESS TO RE') || s === 'NOT COMPLIED WITH')
     return { state: 'warn', word: tlStatusShort(n.status) };
-  if (s === 'INFO NOV SENT OUT') return { state: 'new', word: 'informational notice' };
-  // NOV SENT OUT / NOTICE SENT TO TENANT / VIOLATION OPEN|REOPEN / unknown:
-  if (!n.missed) return { state: 'new', word: n.correctBy ? 'notice sent, deadline not yet due' : 'notice sent' };
-  if (n.frozen && n.yearsFrozen >= 2)
+
+  // "Newly issued" (white) is a genuine recency call: issued in the last year,
+  // OR a correction deadline that's still in the future. An old notice - even
+  // one with no deadline at all, like a Class I informational notice - is not
+  // "new"; it's just sitting on file.
+  const issuedTs = n.nov ? new Date(n.nov).getTime() : (n.insp ? new Date(n.insp).getTime() : 0);
+  const recent = issuedTs && (Date.now() - issuedTs) / 86400000 <= 365;
+  const deadlineAhead = n.correctBy && new Date(n.correctBy) > new Date();
+
+  if (s === 'INFO NOV SENT OUT') {
+    return recent
+      ? { state: 'new', word: 'informational notice (no deadline)' }
+      : { state: 'stalled', word: 'informational notice — no deadline, on file since issued' };
+  }
+  // NOV SENT OUT / NOTICE SENT TO TENANT / VIOLATION OPEN | REOPEN / unknown:
+  if (recent || deadlineAhead)
+    return { state: 'new', word: n.correctBy ? 'notice sent, deadline not yet due' : 'notice sent' };
+  if (n.missed && n.frozen && n.yearsFrozen >= 2)
     return { state: 'stalled', word: `stalled — no activity in ${n.yearsFrozen.toFixed(0)} yrs` };
-  return { state: 'warn', word: 'past deadline, no response' };
+  if (n.missed)
+    return { state: 'warn', word: 'past deadline, no response' };
+  return { state: 'stalled', word: 'on file, no correction deadline recorded' };
 }
 const fmtDay = s => {
   if (!s) return null;
