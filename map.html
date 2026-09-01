@@ -217,13 +217,14 @@
   .tl-item { position: relative; padding: 0 0 10px 18px; }
   .tl-item:last-child { padding-bottom: 2px; }
   /* Timeline dot = one Notice of Violation, colored by where it stands.
-     Six states; each also carries a text label, so colour is never alone.
-       good     green   - owner certified, HPD accepted
-       follow   blue    - HPD still working it (reinspection / defect letter / penalty)
-       new      grey ring - notice sent, deadline not passed / info-only
-       warn     amber   - past deadline, not certified (non-compliant / no access)
-       stalled  d.grey  - past deadline, never certified, frozen 2+ yrs
-       rejected red     - owner certified, HPD rejected it as false/invalid */
+     Six states; the note text after the description carries the same colour,
+     so colour is never the only cue.
+       good     green    - owner certified, HPD accepted
+       follow   blue     - HPD still working it (reinspection / defect letter / penalty)
+       new      white    - notice sent, deadline not passed / info-only
+       warn     amber    - past deadline, not certified (non-compliant / no access)
+       stalled  d.grey   - past deadline, never certified, frozen 2+ yrs
+       rejected red      - owner certified, HPD rejected it as false/invalid */
   .tl-item::before {
     content: ""; position: absolute; left: 0; top: 4px; width: 10px; height: 10px; border-radius: 50%;
     background: #ffffff; border: 2px solid #ffffff;
@@ -234,18 +235,17 @@
   .tl-item.tl-warn::before     { border-color: #f0b429; background: #f0b429; }
   .tl-item.tl-stalled::before  { border-color: #5b646c; background: #5b646c; }
   .tl-item.tl-rejected::before { border-color: #d84b4b; background: #d84b4b; }
-  /* issued in the last ~90 days - state may still change */
-  .tl-item.tl-recent::before { box-shadow: 0 0 0 2px #14161e, 0 0 0 3.5px #00b2a9; }
   .tl-head { cursor: pointer; user-select: none; font-size: 11px; line-height: 1.4; }
   .tl-head:hover { color: #fff; }
   .tl-when { display: block; font-size: 9.5px; color: #767c8c; }
   .tl-what { color: #c4c7d1; }
   .tl-note { color: #767c8c; }
-  .tl-note.t-good { color: #4fc06a; }
-  .tl-note.t-follow { color: #6aa8de; }
+  .tl-note.t-good { color: #2bb24d; }
+  .tl-note.t-follow { color: #4b93d1; }
+  .tl-note.t-new { color: #ffffff; }
   .tl-note.t-warn { color: #f0b429; }
   .tl-note.t-stalled { color: #939ba3; }
-  .tl-note.t-rejected { color: #e86b6b; }
+  .tl-note.t-rejected { color: #d84b4b; }
   .tl-note.miss-t { color: #f0b429; }
   .tl-chev { color: #666c7c; font-size: 9px; }
   .tl-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.16s ease; }
@@ -254,8 +254,8 @@
   .tl-detail dl { margin: 7px 0 2px; display: grid; grid-template-columns: 8.5rem 1fr; gap: 2px 8px; font-size: 10px; }
   .tl-detail dt { color: #666c7c; }
   .tl-detail dd { margin: 0; color: #9aa1b2; }
-  .tl-detail dd.miss-t { color: #e67a6e; }
-  .tl-detail dd.done-t { color: #63c088; }
+  .tl-detail dd.miss-t { color: #f0b429; }
+  .tl-detail dd.done-t { color: #2bb24d; }
   #timeline-empty { font-size: 11.5px; color: #767c8c; font-style: italic; padding: 6px 0; }
   #timeline-more { font-size: 10px; color: #666c7c; text-align: center; padding: 6px 0 2px; }
   #tl-key {
@@ -900,7 +900,6 @@ function buildTimeline(records) {
     };
     const c = classifyNotice(n);
     n.state = c.state; n.stateWord = c.word;
-    n.recent = !!(nov && (now - new Date(nov)) / 86400000 <= 90);
     notices.push(n);
   }
   notices.sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
@@ -953,11 +952,11 @@ function renderTimeline(records) {
   body.innerHTML = key + groups.map(([yr, items]) => `
     <div class="tl-year">${yr}</div>
     <ul class="tl-list">${items.map(n => {
-      const noteTone = { good: 't-good', follow: 't-follow', warn: 't-warn', stalled: 't-stalled', rejected: 't-rejected', new: '' }[n.state] || '';
+      const noteTone = { good: 't-good', follow: 't-follow', new: 't-new', warn: 't-warn', stalled: 't-stalled', rejected: 't-rejected' }[n.state] || '';
       const where = n.apts.length > 1 ? `${n.apts.length} apts`
         : n.apts.length === 1 ? `Apt ${n.apts[0]}` : 'common area';
       const note = `<span class="tl-note ${noteTone}">— ${n.stateWord}</span>`;
-      return `<li class="tl-item tl-${n.state}${n.recent ? ' tl-recent' : ''}">
+      return `<li class="tl-item tl-${n.state}">
         <div class="tl-head">
           <span class="tl-when">${fmtDay(n.nov || n.insp) || 'undated'} &middot; ${where}${n.cls ? ' &middot; Class ' + n.cls : ''}</span>
           <span class="tl-what">${n.defect || 'violation'}</span> ${note} <span class="tl-chev">&#9662;</span>
