@@ -123,6 +123,17 @@ class BuildingProfile:
     n_defect_visits: int          # distinct dates a real (non-admin) defect was cited, any ordernumber
     defect_visit_span_years: float
 
+    # Process-staleness signals (Findings 8/9). Computed over real (non-admin),
+    # non-certified violations only. "Frozen" = the violation's status has not
+    # moved past issuance (currentstatusdate within ~14 days of novissueddate)
+    # AND its correction deadline has passed - i.e. notice mailed, deadline
+    # blown, nothing recorded since, from either the owner or HPD.
+    frozen_overdue_count: int = 0
+    frozen_overdue_share: float = 0.0   # / real_defect_count
+    frozen_years_max: float = 0.0       # years since the oldest frozen violation last changed status
+    stale_status_count: int = 0         # real, uncertified violations with no status change in 5+ years
+    timeline_fields_present: bool = False  # False when the cache predates the timeline-field re-pull
+
     # Assigned dimension levels
     scale: str = ""
     recency: str = ""
@@ -227,6 +238,12 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     non_compliance_total = non_compliance_recent = 0
     accepted_cert = rejected_cert = 0
     max_days_overdue = 0
+    # Process-staleness (Findings 8/9) - only meaningful once the violation
+    # cache carries the timeline fields (added 2026-09-01). On an older cache
+    # these stay at their zero defaults and timeline_fields_present is False.
+    timeline_present = any("currentstatusdate" in v for v in violations)
+    frozen_overdue_count = stale_status_count = 0
+    frozen_years_max = 0.0
     # Building-wide signatures (same OrderNumber, ANY apartment) - not
     # apartment-scoped. Finding 2: apartment-only grouping structurally can't
     # see a defect recurring across different units at the same building
@@ -270,8 +287,24 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         # years late) isn't a currently-outstanding deadline - counting it
         # toward backlog age is how a 2008 record reads as "18 years overdue"
         # today. Only uncertified violations can push this number.
-        if deadline and deadline < today and status not in ACCEPTED_CERT_STATUSES:
+        certified = status in ACCEPTED_CERT_STATUSES
+        if deadline and deadline < today and not certified:
             max_days_overdue = max(max_days_overdue, (today - deadline).days)
+
+        # Process-staleness (Findings 8/9): real, uncertified violations only.
+        is_real = v.get("ordernumber") not in ADMINISTRATIVE_ORDERNUMBERS
+        if timeline_present and is_real and not certified:
+            status_date = _parse_date(v.get("currentstatusdate"))
+            if status_date:
+                years_since_status = (today - status_date).days / 365
+                if years_since_status >= 5:
+                    stale_status_count += 1
+                # "Frozen": status never moved past issuance, and the
+                # correction deadline is in the past.
+                never_moved = nov_date and (status_date - nov_date).days <= 14
+                if never_moved and deadline and deadline < today:
+                    frozen_overdue_count += 1
+                    frozen_years_max = max(frozen_years_max, years_since_status)
 
         ordernumber = v.get("ordernumber")
         novid = v.get("novid")
@@ -334,6 +367,11 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         n_chronic_sigs=n_chronic,
         n_defect_visits=n_defect_visits,
         defect_visit_span_years=defect_visit_span_years,
+        frozen_overdue_count=frozen_overdue_count,
+        frozen_overdue_share=(frozen_overdue_count / real_defect_count) if real_defect_count else 0.0,
+        frozen_years_max=frozen_years_max,
+        stale_status_count=stale_status_count,
+        timeline_fields_present=timeline_present,
     )
     p.scale = _level_scale(p.active_count)
     p.recency = _level_recency(p.recency_ratio)

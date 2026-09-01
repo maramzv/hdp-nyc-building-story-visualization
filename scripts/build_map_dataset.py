@@ -20,6 +20,7 @@ batches - see PARTIAL_PATH/PROGRESS_PATH below.
 Run: python scripts/build_map_dataset.py
 """
 import json
+import os
 import random
 import sys
 import time
@@ -46,12 +47,50 @@ NEEDED_FIELDS = [
     "novdescription", "novissueddate", "class", "currentstatus",
     "newcorrectbydate", "originalcorrectbydate", "ordernumber", "novid",
     "block", "lot",
+    # Process-timeline fields (Findings 8/9): let the story distinguish a
+    # violation that's actively moving through the process from one that's
+    # been frozen at "NOV SENT OUT" for years. currentstatusdate is the
+    # load-bearing one; the rest give the full inspection->certify arc.
+    "inspectiondate", "approveddate", "originalcertifybydate",
+    "newcertifybydate", "certifieddate", "currentstatusdate",
 ]
 
 
 def chunked(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
+
+
+def get_current_building_ids(resuming=False):
+    """Every distinct buildingid that has an open violation RIGHT NOW, pulled
+    live and paginated. Replaces the old frozen list read from
+    threshold_calibration_raw.json (2026-08-13) - that list could only ever
+    lose buildings on a refresh, never pick up ones whose first violation
+    landed after it was captured.
+
+    Every run pulls this live so the dataset is always the current citywide
+    population, not a slice of whatever we happened to grab last time. The
+    building_ids_current.json cache is ONLY reused mid-run, to keep a killed
+    pull's resume batching aligned with the list it started from."""
+    cache = DATA_DIR / "building_ids_current.json"
+    if resuming and cache.exists():
+        ids = json.load(open(cache))
+        print(f"Resuming: reusing the {len(ids)}-ID list this pull started from ({cache.name})")
+        return ids
+
+    ids, offset, page = [], 0, 50000
+    while True:
+        rows = query_with_retry(select="buildingid", group="buildingid",
+                                order="buildingid", limit=page, offset=offset, timeout=120)
+        ids.extend(r["buildingid"] for r in rows if r.get("buildingid"))
+        print(f"  building-id page @offset {offset}: +{len(rows)} (total {len(ids)})")
+        if len(rows) < page:
+            break
+        offset += page
+    ids = sorted(set(ids))
+    json.dump(ids, open(cache, "w"))
+    print(f"Pulled {len(ids)} distinct buildings with an open violation (live), cached to {cache.name}")
+    return ids
 
 
 def query_with_retry(retries=5, backoff=3.0, **kwargs):
@@ -77,19 +116,33 @@ def main():
     partial_path = DATA_DIR / "map_dataset_violations_raw.partial.jsonl"
     progress_path = DATA_DIR / "map_dataset_violations_raw.progress.json"
 
+    # --refresh (or REFRESH=1) forces a fresh violation pull even if the cache
+    # exists - needed when NEEDED_FIELDS changes, since the cache only holds
+    # whatever fields were requested when it was last written. The old cache is
+    # renamed to *.superseded rather than deleted, so it can be restored by hand.
+    force_refresh = "--refresh" in sys.argv or os.environ.get("REFRESH") == "1"
+    if cache_path.exists() and force_refresh:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        superseded = cache_path.with_suffix(f".json.superseded-{stamp}")
+        cache_path.rename(superseded)
+        print(f"--refresh: moved existing cache aside to {superseded.name}, re-pulling")
+
     if cache_path.exists():
         all_rows = json.load(open(cache_path))
         print(f"Loaded {len(all_rows)} violation rows from cache (skipping re-pull)")
+        missing = [f for f in NEEDED_FIELDS if all_rows and f not in all_rows[0]]
+        if missing:
+            print(f"  WARNING: cache is missing {missing} - run with --refresh to re-pull")
     else:
-        cal = json.load(open(DATA_DIR / "threshold_calibration_raw.json"))
-        all_ids = [r["buildingid"] for r in cal["violations_per_building"]]
+        resuming = progress_path.exists() and partial_path.exists()
+        all_ids = get_current_building_ids(resuming=resuming)
         random.shuffle(all_ids)
         batches = list(chunked(all_ids, BATCH_SIZE))
         print(f"Pulling violations for all {len(all_ids)} citywide buildings "
               f"with an open violation, in {len(batches)} batches")
 
         start_batch = 0
-        if progress_path.exists() and partial_path.exists():
+        if resuming:
             start_batch = json.load(open(progress_path))["completed_batches"]
             print(f"Resuming from batch {start_batch+1}/{len(batches)} "
                   f"(found existing checkpoint)")
@@ -182,20 +235,40 @@ def main():
             matched += 1
     print(f"PLUTO matches: {matched}/{len(building_loc)}")
 
+    # Geocoded per-address points (scripts/geocode_buildings.py), preferred
+    # over PLUTO's one-point-per-tax-lot centroid so buildings sit where they
+    # actually are - and distinct addresses on one lot get distinct points
+    # instead of being spread into an artificial grid client-side.
+    geo_path = DATA_DIR / "building_geocodes.json"
+    geocodes = json.load(open(geo_path)) if geo_path.exists() else {}
+    if geocodes:
+        print(f"Loaded {len(geocodes)} geocoded points (preferred over PLUTO centroids)")
+    else:
+        print("No building_geocodes.json - using PLUTO lot centroids "
+              "(run scripts/geocode_buildings.py for real per-address placement)")
+
     # --- Step 4: assemble final dataset ---
     output = []
     for bid, p in profiles.items():
         loc = building_loc.get(bid)
-        if not loc:
-            continue
-        pluto = pluto_matches.get((loc[0], str(loc[1]), str(loc[2])))
-        if not pluto or not pluto.get("latitude") or not pluto.get("longitude"):
-            continue
+        pluto = pluto_matches.get((loc[0], str(loc[1]), str(loc[2]))) if loc else None
+
+        geo = geocodes.get(bid)
+        lat = lon = None
+        if geo:
+            lon, lat = float(geo[0]), float(geo[1])
+        elif pluto and pluto.get("latitude") and pluto.get("longitude"):
+            try:
+                lat, lon = float(pluto["latitude"]), float(pluto["longitude"])
+            except (ValueError, TypeError):
+                lat = lon = None
+        if lat is None or lon is None:
+            continue  # no usable position from either source
+
         try:
-            lat, lon = float(pluto["latitude"]), float(pluto["longitude"])
-            floors = float(pluto.get("numfloors") or 0) or 3.0  # default 3 if missing/zero
+            floors = float((pluto or {}).get("numfloors") or 0) or 3.0
         except (ValueError, TypeError):
-            continue
+            floors = 3.0
 
         # Estimate each building's footprint (for map rendering) from PLUTO's
         # total building area divided by floor count, converted sq ft -> m^2.
@@ -203,7 +276,7 @@ def main():
         # missing/zero, and is clamped so bad data can't produce an absurd
         # or invisible shape on the map.
         try:
-            bldgarea_sqft = float(pluto.get("bldgarea") or 0)
+            bldgarea_sqft = float((pluto or {}).get("bldgarea") or 0)
         except (ValueError, TypeError):
             bldgarea_sqft = 0
         footprint_m2 = (bldgarea_sqft / floors * 0.0929) if bldgarea_sqft else 150.0

@@ -132,6 +132,10 @@ function buildProfile(buildingid, violations, today) {
   let nonComplianceTotal = 0, nonComplianceRecent = 0;
   let acceptedCert = 0, rejectedCert = 0;
   let maxDaysOverdue = 0;
+  // Process-staleness (Findings 8/9) - only meaningful once the violation
+  // cache carries the timeline fields. See building_story.py for the logic.
+  const timelinePresent = violations.some(v => "currentstatusdate" in v);
+  let frozenOverdueCount = 0, staleStatusCount = 0, frozenYearsMax = 0.0;
   // Building-wide signatures (same OrderNumber, ANY apartment) - see the
   // matching comment in building_story.py for why apartment-scoped grouping
   // was replaced rather than kept alongside this.
@@ -159,8 +163,24 @@ function buildProfile(buildingid, violations, today) {
     if (status === "FALSE CERTIFICATION" || status === "INVALID CERTIFICATION") rejectedCert++;
 
     const deadline = parseDate(v.newcorrectbydate) || parseDate(v.originalcorrectbydate);
-    if (deadline && deadline < today && !ACCEPTED_CERT_STATUSES.has(status)) {
+    const certified = ACCEPTED_CERT_STATUSES.has(status);
+    if (deadline && deadline < today && !certified) {
       maxDaysOverdue = Math.max(maxDaysOverdue, daysBetween(today, deadline));
+    }
+
+    // Process-staleness (Findings 8/9): real, uncertified violations only.
+    const isReal = !ADMINISTRATIVE_ORDERNUMBERS.has(v.ordernumber);
+    if (timelinePresent && isReal && !certified) {
+      const statusDate = parseDate(v.currentstatusdate);
+      if (statusDate) {
+        const yearsSinceStatus = daysBetween(today, statusDate) / 365;
+        if (yearsSinceStatus >= 5) staleStatusCount++;
+        const neverMoved = novDate && daysBetween(statusDate, novDate) <= 14;
+        if (neverMoved && deadline && deadline < today) {
+          frozenOverdueCount++;
+          frozenYearsMax = Math.max(frozenYearsMax, yearsSinceStatus);
+        }
+      }
     }
 
     const ordernumber = v.ordernumber;
@@ -236,6 +256,11 @@ function buildProfile(buildingid, violations, today) {
     n_chronic_sigs: nChronic,
     n_defect_visits: nDefectVisits,
     defect_visit_span_years: defectVisitSpanYears,
+    frozen_overdue_count: frozenOverdueCount,
+    frozen_overdue_share: realDefectCount ? frozenOverdueCount / realDefectCount : 0.0,
+    frozen_years_max: frozenYearsMax,
+    stale_status_count: staleStatusCount,
+    timeline_fields_present: timelinePresent,
   };
   p.scale = levelScale(p.active_count);
   p.recency = levelRecency(p.recency_ratio);

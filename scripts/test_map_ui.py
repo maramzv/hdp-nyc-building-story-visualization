@@ -11,7 +11,7 @@ Playwright/Chromium installed.
 import sys
 from playwright.sync_api import sync_playwright
 
-URL = "http://localhost:8000/map.html"
+URL = "http://localhost:8231/map.html"
 failures = []
 console_errors = []
 
@@ -93,14 +93,34 @@ def main():
         ev_count_text = page.locator("#evidence-count").inner_text()
         check("live evidence count shown", "record" in ev_count_text, ev_count_text)
 
-        page.click("#evidence-toggle")
-        page.wait_for_timeout(200)
-        check("evidence table expands on click", page.locator("#evidence-table").evaluate("el => el.classList.contains('open')"))
-        ev_rows = page.locator(".ev-row").count()
-        check("evidence rows rendered", ev_rows > 0, f"rows={ev_rows}")
-
         similar_text = page.locator("#d-similar").inner_text()
         check("similar-buildings text populated", len(similar_text) > 5, similar_text)
+
+        # Story / Evidence / Timeline tabs (replaced the old evidence-toggle)
+        page.click('#story-tabs button[data-tab="evidence"]')
+        page.wait_for_timeout(200)
+        check("evidence tab activates", page.locator("#tab-evidence").evaluate("el => el.classList.contains('active')"))
+        ev_rows = page.locator("#tab-evidence .ev-row").count()
+        check("evidence rows rendered", ev_rows > 0, f"rows={ev_rows}")
+
+        page.click('#story-tabs button[data-tab="timeline"]')
+        page.wait_for_timeout(200)
+        check("timeline tab activates", page.locator("#tab-timeline").evaluate("el => el.classList.contains('active')"))
+        page.wait_for_function(
+            "() => document.querySelectorAll('#timeline-body .tl-item').length > 0 "
+            "|| document.getElementById('timeline-empty')",
+            timeout=5000,
+        )
+        tl_items = page.locator("#timeline-body .tl-item").count()
+        check("timeline entries rendered", tl_items > 0, f"items={tl_items}")
+        if tl_items > 0:
+            page.locator("#timeline-body .tl-head").first.click()
+            page.wait_for_timeout(200)
+            check("timeline entry expands on click",
+                  page.locator("#timeline-body .tl-item.open").count() > 0)
+
+        page.click('#story-tabs button[data-tab="story"]')
+        page.wait_for_timeout(150)
 
         print("\nFlow 7: REAL mouse hover over a rendered building shows the tooltip with correct content")
         hover_target = page.evaluate("""

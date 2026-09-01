@@ -190,14 +190,56 @@
   .skel-line { height: 12px; margin-bottom: 8px; }
   .skel-k { height: 8px; width: 55%; margin-bottom: 6px; }
   .skel-v { height: 14px; width: 40%; }
-  #evidence-toggle {
-    margin-top: 14px; padding-top: 12px; border-top: 1px solid #333747;
-    font-size: 12px; color: #9aa1b2; cursor: pointer; user-select: none;
+  /* Story / Evidence / Timeline tab bar - same panel width, switch not scroll */
+  #story-tabs {
+    display: flex; gap: 2px; margin: 12px 0 12px; border-bottom: 1px solid #333747;
   }
-  #evidence-toggle:hover { color: #fff; }
-  #evidence-count { color: #666c7c; }
-  #evidence-table { display: none; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  #story-tabs button {
+    flex: 1; background: none; border: none; color: #767c8c; font: inherit; font-size: 11.5px;
+    padding: 7px 4px 8px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  #story-tabs button:hover { color: #b9c0cf; }
+  #story-tabs button.active { color: #e8eaf0; border-bottom-color: #00b2a9; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  #evidence-intro { font-size: 11.5px; color: #9aa1b2; line-height: 1.45; margin-bottom: 10px; }
+  #evidence-count { color: #666c7c; display: block; margin-top: 2px; }
+  #evidence-table { display: none; max-height: 320px; overflow-y: auto; }
   #evidence-table.open { display: block; }
+
+  /* Timeline (tab): building-wide, grouped by year, each notice expands */
+  #timeline-body { max-height: 340px; overflow-y: auto; padding-right: 2px; }
+  .tl-year { font-size: 12px; font-weight: 700; color: #00b2a9; margin: 12px 0 7px; }
+  .tl-year:first-child { margin-top: 2px; }
+  .tl-list { list-style: none; margin: 0 0 4px; padding: 0; position: relative; }
+  .tl-list::before { content: ""; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 2px; background: #2b3444; }
+  .tl-item { position: relative; padding: 0 0 10px 18px; }
+  .tl-item:last-child { padding-bottom: 2px; }
+  .tl-item::before {
+    content: ""; position: absolute; left: 0; top: 4px; width: 10px; height: 10px; border-radius: 50%;
+    background: #14161e; border: 2px solid #5c6472;
+  }
+  .tl-item.miss::before { border-color: #e67a6e; background: #e67a6e; }
+  .tl-item.done::before { border-color: #63c088; background: #63c088; }
+  .tl-item.fresh::before { border-color: #00b2a9; background: #00b2a9; }
+  .tl-head { cursor: pointer; user-select: none; font-size: 11px; line-height: 1.4; }
+  .tl-head:hover { color: #fff; }
+  .tl-when { display: block; font-size: 9.5px; color: #767c8c; }
+  .tl-what { color: #c4c7d1; }
+  .tl-note { color: #767c8c; }
+  .tl-note.miss-t { color: #e67a6e; }
+  .tl-chev { color: #666c7c; font-size: 9px; }
+  .tl-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.16s ease; }
+  .tl-detail > div { overflow: hidden; }
+  .tl-item.open .tl-detail { grid-template-rows: 1fr; }
+  .tl-detail dl { margin: 7px 0 2px; display: grid; grid-template-columns: 8.5rem 1fr; gap: 2px 8px; font-size: 10px; }
+  .tl-detail dt { color: #666c7c; }
+  .tl-detail dd { margin: 0; color: #9aa1b2; }
+  .tl-detail dd.miss-t { color: #e67a6e; }
+  .tl-detail dd.done-t { color: #63c088; }
+  #timeline-empty { font-size: 11.5px; color: #767c8c; font-style: italic; padding: 6px 0; }
+  #timeline-more { font-size: 10px; color: #666c7c; text-align: center; padding: 6px 0 2px; }
   .ev-row { font-size: 11px; padding: 7px 0; border-bottom: 1px solid #23273499; }
   .ev-row .ev-top { display: flex; justify-content: space-between; color: #8a90a0; margin-bottom: 2px; }
   .ev-row .ev-class-A { color: #e0c14c; font-weight: 600; }
@@ -285,11 +327,23 @@
       <div id="detail">
         <h2 id="d-headline"></h2>
         <div class="addr" id="d-addr"></div>
-        <div class="narrative" id="d-narrative"></div>
-        <div class="dims" id="d-dims"></div>
-        <div class="similar" id="d-similar"></div>
-        <div id="evidence-toggle">Why we're saying this &rarr; <span id="evidence-count"></span></div>
-        <div id="evidence-table"></div>
+        <div id="story-tabs">
+          <button data-tab="story" class="active">Story</button>
+          <button data-tab="evidence">Evidence</button>
+          <button data-tab="timeline">Timeline</button>
+        </div>
+        <div class="tab-pane active" id="tab-story">
+          <div class="narrative" id="d-narrative"></div>
+          <div class="dims" id="d-dims"></div>
+          <div class="similar" id="d-similar"></div>
+        </div>
+        <div class="tab-pane" id="tab-evidence">
+          <div id="evidence-intro">The actual violation records this story was built from. <span id="evidence-count"></span></div>
+          <div id="evidence-table" class="open"></div>
+        </div>
+        <div class="tab-pane" id="tab-timeline">
+          <div id="timeline-body"></div>
+        </div>
         <div id="d-buildingid"></div>
       </div>
     </div>
@@ -683,8 +737,8 @@ function buildEvidenceFromRecords(records) {
 function renderEvidence(records) {
   const countEl = document.getElementById('evidence-count');
   const tableEl = document.getElementById('evidence-table');
-  countEl.textContent = `(${records.length} record${records.length !== 1 ? 's' : ''})`;
-  tableEl.classList.remove('open');
+  countEl.textContent = `${records.length} record${records.length !== 1 ? 's' : ''} on file.`;
+  tableEl.classList.add('open');
   const shown = records.slice(0, EVIDENCE_DISPLAY_LIMIT);
   tableEl.innerHTML = shown.map(r => `
     <div class="ev-row">
@@ -693,7 +747,154 @@ function renderEvidence(records) {
     </div>`).join('') +
     (records.length > EVIDENCE_DISPLAY_LIMIT
       ? `<div id="evidence-more">showing ${EVIDENCE_DISPLAY_LIMIT} of ${records.length} records</div>` : '');
-  document.getElementById('evidence-toggle').onclick = () => tableEl.classList.toggle('open');
+}
+
+/* ---------- Timeline tab: the building's full history, notice by notice ----------
+ * Built straight from the live per-building fetch (which already carries every
+ * process-timeline field: inspection, approval, both deadlines + revisions,
+ * certification, current status). One entry per Notice of Violation (grouped by
+ * NOVID - a single notice can carry several line items), newest first, grouped
+ * by year, each expandable to that notice's full inspection->status arc. */
+const TIMELINE_NOTICE_LIMIT = 150; // covers all notices for all but a handful of extreme buildings
+const TL_STATUS_SHORT = {
+  'NOT COMPLIED WITH': 'not complied with',
+  'NOV SENT OUT': 'notice sent, nothing since',
+  'NOV CERTIFIED LATE': 'owner certified (late)',
+  'NOV CERTIFIED ON TIME': 'owner certified (on time)',
+  'INVALID CERTIFICATION': 'certification rejected as invalid',
+  'FALSE CERTIFICATION': 'certification rejected as false',
+  'VIOLATION WILL BE REINSPECTED': 'reinspection scheduled',
+  'FIRST NO ACCESS TO RE- INSPECT VIOLATION': 'inspector could not get access',
+  'FIRST NO ACCESS TO RE-INSPECT VIOLATION': 'inspector could not get access',
+  'SECOND NO ACCESS TO RE- INSPECT VIOLATION': 'inspector could not get access (2nd try)',
+  'NOTICE OF ISSUANCE SENT TO TENANT': 'notice sent, nothing since',
+  'DEFECT LETTER ISSUED': 'defect letter issued',
+  'VIOLATION OPEN': 'open, not yet processed',
+  'INFO NOV SENT OUT': 'informational notice sent',
+};
+const tlStatusShort = raw => TL_STATUS_SHORT[raw]
+  || (raw ? raw.toLowerCase().replace(/re-\s+inspect/g, 're-inspect') : 'unknown');
+const CERT_OK = ['NOV CERTIFIED ON TIME', 'NOV CERTIFIED LATE'];
+const fmtDay = s => {
+  if (!s) return null;
+  const d = new Date(s.slice(0, 10) + 'T00:00:00Z');
+  return isNaN(d) ? null : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+};
+const yearOf = s => (s && /^\d{4}/.test(s)) ? s.slice(0, 4) : '—';
+
+function buildTimeline(records) {
+  const byNovid = new Map();
+  for (const v of records) {
+    const id = v.novid || `noid-${v.violationid || Math.random()}`;
+    if (!byNovid.has(id)) byNovid.set(id, []);
+    byNovid.get(id).push(v);
+  }
+  const now = new Date();
+  const notices = [];
+  for (const [id, items] of byNovid) {
+    const f = items[0];
+    const nov = f.novissueddate || null;
+    const insp = items.map(x => x.inspectiondate).filter(Boolean).sort()[0] || null;
+    const correctBy = f.newcorrectbydate || f.originalcorrectbydate || null;
+    const certifyBy = f.newcertifybydate || f.originalcertifybydate || null;
+    const certified = items.map(x => x.certifieddate).filter(Boolean).sort()[0] || null;
+    const status = f.currentstatus || '';
+    const statusDate = f.currentstatusdate || null;
+    const apts = [...new Set(items.map(x => x.apartment).filter(Boolean))];
+    const cls = items.map(x => x.class).sort()[0] || null;
+    const defect = shortLabel(f.novdescription || '');
+    const isCertified = CERT_OK.includes(status);
+    const missed = correctBy && new Date(correctBy) < now && !isCertified;
+    const frozen = missed && nov && statusDate &&
+      (new Date(statusDate) - new Date(nov)) / 86400000 <= 21;
+    const yearsFrozen = (frozen && statusDate)
+      ? (now - new Date(statusDate)) / (365 * 86400000) : 0;
+    notices.push({
+      id, sortKey: nov || insp || '', year: yearOf(nov || insp),
+      insp, approved: f.approveddate || null, nov, correctBy, certifyBy, certified,
+      status, statusDate, apts, cls, defect, count: items.length,
+      isCertified, missed, frozen, yearsFrozen,
+    });
+  }
+  notices.sort((a, b) => (b.sortKey || '').localeCompare(a.sortKey || ''));
+  return notices;
+}
+
+function noticeDetailHTML(n) {
+  const row = (k, v, cls) => v ? `<dt>${k}</dt><dd class="${cls || ''}">${v}</dd>` : '';
+  let statusLine = tlStatusShort(n.status);
+  if (n.statusDate) statusLine += ` (as of ${fmtDay(n.statusDate)})`;
+  return `<dl>
+    ${row('inspected', fmtDay(n.insp))}
+    ${row('HPD approved', fmtDay(n.approved))}
+    ${row('notice issued', fmtDay(n.nov))}
+    ${row('fix-by deadline', fmtDay(n.correctBy) + (n.missed ? ' — missed' : (n.correctBy ? '' : '')), n.missed ? 'miss-t' : '')}
+    ${row('self-report deadline', fmtDay(n.certifyBy))}
+    ${row('owner certified', n.certified ? fmtDay(n.certified) : (n.correctBy ? 'never' : ''), n.certified ? 'done-t' : (n.correctBy ? 'miss-t' : ''))}
+    ${row('status now', statusLine)}
+  </dl>`;
+}
+
+function renderTimeline(records) {
+  const body = document.getElementById('timeline-body');
+  const notices = buildTimeline(records);
+  if (!notices.length) {
+    body.innerHTML = `<div id="timeline-empty">No dated notices to lay out for this building.</div>`;
+    return;
+  }
+  const shown = notices.slice(0, TIMELINE_NOTICE_LIMIT);
+  const groups = [];
+  let curYear = null, list = [];
+  for (const n of shown) {
+    if (n.year !== curYear) {
+      if (list.length) groups.push([curYear, list]);
+      curYear = n.year; list = [];
+    }
+    list.push(n);
+  }
+  if (list.length) groups.push([curYear, list]);
+
+  body.innerHTML = groups.map(([yr, items]) => `
+    <div class="tl-year">${yr}</div>
+    <ul class="tl-list">${items.map(n => {
+      const cls = n.frozen ? 'miss' : n.isCertified ? 'done' :
+        (n.sortKey && new Date(n.sortKey) > new Date(Date.now() - 120 * 86400000) ? 'fresh' : '');
+      const where = n.apts.length > 1 ? `${n.apts.length} apts`
+        : n.apts.length === 1 ? `Apt ${n.apts[0]}` : 'common area';
+      let note = '';
+      if (n.frozen && n.yearsFrozen >= 1) {
+        note = `<span class="tl-note miss-t">— no activity in ${n.yearsFrozen.toFixed(0)} yr${n.yearsFrozen >= 2 ? 's' : ''}</span>`;
+      } else if (n.status) {
+        note = `<span class="tl-note">— ${tlStatusShort(n.status)}</span>`;
+      }
+      return `<li class="tl-item ${cls}">
+        <div class="tl-head">
+          <span class="tl-when">${fmtDay(n.nov || n.insp) || 'undated'} &middot; ${where}${n.cls ? ' &middot; Class ' + n.cls : ''}</span>
+          <span class="tl-what">${n.defect || 'violation'}</span> ${note} <span class="tl-chev">&#9662;</span>
+        </div>
+        <div class="tl-detail"><div>${noticeDetailHTML(n)}</div></div>
+      </li>`;
+    }).join('')}</ul>
+  `).join('') + (notices.length > shown.length
+    ? `<div id="timeline-more">showing the ${shown.length} most recent of ${notices.length} notices</div>` : '');
+
+  body.querySelectorAll('.tl-head').forEach(h => {
+    h.onclick = () => h.parentElement.classList.toggle('open');
+  });
+}
+
+/* Story / Evidence / Timeline tab switching */
+document.querySelectorAll('#story-tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#story-tabs button').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-pane').forEach(p =>
+      p.classList.toggle('active', p.id === 'tab-' + btn.dataset.tab));
+    document.getElementById('panel').scrollTop = 0;
+  });
+});
+function resetTabs() {
+  document.querySelectorAll('#story-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === 'story'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'tab-story'));
 }
 
 function renderHeadline(pattern, scale) {
@@ -726,9 +927,25 @@ const STATUS_SHORT = {
  * just without the case numbers.
  */
 function stripCitation(desc) {
-  return (desc || '').replace(
-    /^(?:HMC ADM CODE:\s*)?(?:§|SECTION)\s*[\d.,\s]+\s*(?:ADMIN\.?\s*CODE|ADM CODE|HMC)?:?\s*/i, ''
-  ).trim();
+  // HPD descriptions open with a legal citation in many shapes: "§ 27-2005",
+  // "HMC ADM CODE:", "567 (C) § 27-2017, 27-2017.1, ...", "2013 ADM CODE",
+  // "� 27-2005 HMC:" (mojibake section sign), long code chains, etc. Strip
+  // them by repeatedly peeling known citation fragments off the front until
+  // the first real word (the defect verb) is exposed.
+  let s = (desc || '').trim();
+  const rules = [
+    /^[^A-Za-z(]+/,                                              // leading digits / § / mojibake / punctuation
+    /^\(\s*[A-Za-z0-9]{1,3}\s*\)\s*/,                            // (C) / ( 2 ) class or subsection marker
+    /^(?:HMC|ADM|ADMIN|CODE|RCNY|MDL|NYC|DOB|SEC|SECTION)\b[:.\s]*/i,
+    /^\d[\d.\-]*\b[,;.\s]*/,                                     // a bare code number
+    /^(?:AND|OF)\s+(?=[\d§�(])/i,                           // "and"/"of" joining more codes
+  ];
+  let prev;
+  do {
+    prev = s;
+    for (const r of rules) s = s.replace(r, '').trimStart();
+  } while (s !== prev && s.length);
+  return s || (desc || '').trim();
 }
 
 function sentenceCase(s) {
@@ -865,6 +1082,8 @@ function renderSkeleton() {
   document.getElementById('d-dims').innerHTML = Array.from({ length: 6 }).map(() =>
     `<div class="dim-card"><div class="skel skel-k"></div><div class="skel skel-v"></div></div>`
   ).join('');
+  document.getElementById('timeline-body').innerHTML =
+    `<div class="skel skel-line" style="width:70%"></div><div class="skel skel-line" style="width:90%"></div><div class="skel skel-line" style="width:55%"></div>`;
 }
 
 /** d = the lightweight, batch-computed dot data (position/pattern/scale/neighborhood).
@@ -879,6 +1098,7 @@ function showDetail(d) {
   document.getElementById('d-addr').textContent = d.address;
   document.getElementById('d-buildingid').textContent = 'BuildingID ' + d.buildingid;
   renderSkeleton();
+  resetTabs();
   renderSimilar(d.buildingid, d.pattern, d.neighborhood);
   document.getElementById('evidence-count').textContent = '';
   document.getElementById('evidence-table').innerHTML = '';
@@ -904,6 +1124,7 @@ function showDetail(d) {
       renderDims(profile, evidence, records);
 
       renderEvidence(evidence);
+      renderTimeline(records);
     })
     .catch(err => {
       if (myRequestId !== currentRequestId) return;
@@ -1133,7 +1354,7 @@ Promise.all([
     window.__TEST_DATA__ = data; // temporary hook for automated testing
     document.getElementById('status').innerHTML =
       `${data.length.toLocaleString()} buildings loaded` +
-      `<span class="status-credit">Data: <a href="https://data.cityofnewyork.us/Housing-Development/Open-HPD-Violations/csn4-vhvf/about_data" target="_blank" rel="noopener">NYC HPD Open Violations</a> &middot; refreshed Aug 14, 2026</span>`;
+      `<span class="status-credit">Data: <a href="https://data.cityofnewyork.us/Housing-Development/Open-HPD-Violations/csn4-vhvf/about_data" target="_blank" rel="noopener">NYC HPD Open Violations</a> &middot; refreshed Sep 1, 2026</span>`;
     renderSummary(data);
     renderLanding(data);
 
