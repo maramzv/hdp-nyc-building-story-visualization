@@ -16,6 +16,11 @@ data/*.bak
 !data/nyc_boundary.geojson
 data/sample2983_backup/
 docs/
+# ...except the public write-up deliverable (re-include its dir, but keep
+# every other file in that dir ignored)
+!docs/context/
+docs/context/*
+!docs/context/visualization-findings.md
 
 # Claude Code chat transcripts (local records only)
 .claude/save-chat-state.json
