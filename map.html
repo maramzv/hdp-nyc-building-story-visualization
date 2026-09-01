@@ -291,11 +291,27 @@
   #timeline-empty { font-size: 11.5px; color: #767c8c; font-style: italic; padding: 6px 0; }
   #timeline-more { font-size: 10px; color: #666c7c; text-align: center; padding: 6px 0 2px; }
   #tl-key {
-    display: flex; flex-wrap: wrap; gap: 4px 11px; font-size: 9.5px; color: #767c8c;
+    font-size: 9.5px; color: #767c8c;
     padding: 0 0 10px; margin-bottom: 6px; border-bottom: 1px solid #23273499;
   }
-  #tl-key span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .tl-key-chips { display: flex; flex-wrap: wrap; gap: 4px 11px; align-items: center; }
+  .tl-key-chips > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
   #tl-key i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .tl-key-toggle {
+    background: none; border: none; font: inherit; font-size: 9.5px; color: #7d8bff;
+    cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px;
+  }
+  .tl-key-toggle:hover { color: #9aa5ff; }
+  .tl-key-full { display: none; margin-top: 9px; }
+  #tl-key.open .tl-key-full { display: block; }
+  #tl-key.open .tl-key-toggle { color: #767c8c; }
+  .tl-key-full p {
+    font-size: 10px; line-height: 1.5; color: #9aa1b2; margin: 0 0 7px;
+    display: flex; gap: 7px; align-items: flex-start;
+  }
+  .tl-key-full p:last-child { margin-bottom: 0; }
+  .tl-key-full p i { margin-top: 3px; }
+  .tl-key-full b { color: #d0d3dd; font-weight: 600; }
   #tl-key i.k-good { background: #2bb24d; }
   #tl-key i.k-follow { background: #4b93d1; }
   #tl-key i.k-new { background: #ffffff; }
@@ -898,31 +914,35 @@ function classifyNotice(n) {
   const recent = issuedTs && (Date.now() - issuedTs) / 86400000 <= 365;
   const deadlineAhead = n.correctBy && new Date(n.correctBy) > new Date();
 
+  const yr = d => (d || '').slice(0, 4);
   if (TL_FIXED.has(s))
-    return { state: 'good', word: n.certified ? `certified fixed in ${n.certified.slice(0, 4)}` : 'certified fixed' };
+    return { state: 'good', word: n.certified ? `landlord certified fixed in ${yr(n.certified)}, city accepted` : 'landlord certified fixed, city accepted' };
   if (TL_REJECTED.has(s))
-    return { state: 'rejected', word: 'certification rejected as false or invalid' };
+    return { state: 'rejected', word: 'landlord claimed fixed — city rejected it as false or invalid' };
   if (TL_ADMIN[n.ordernumber])
-    return { state: 'admin', word: TL_ADMIN[n.ordernumber] + (yrsOpen >= 1 ? ` — ${yrsOpen} yr${yrsOpen > 1 ? 's' : ''}` : '') };
+    return { state: 'admin', word: 'a required filing the landlord still has not made'
+      + (yrsOpen >= 1 ? ` — ${yrsOpen} yr${yrsOpen > 1 ? 's' : ''}` : '') };
   if (TL_FOLLOW.has(s))
-    return { state: 'follow', word: tlStatusShort(n.status) };
-  if (s.includes('NO ACCESS TO RE') || s === 'NOT COMPLIED WITH' || s === 'CERTIFICATION POSTPONMENT DENIED')
-    return { state: 'warn', word: tlStatusShort(n.status) };
+    return { state: 'follow', word: `city still acting on it — ${tlStatusShort(n.status)}` };
+  if (s.includes('NO ACCESS TO RE'))
+    return { state: 'warn', word: 'deadline passed — inspector could not get in to check' };
+  if (s === 'NOT COMPLIED WITH' || s === 'CERTIFICATION POSTPONMENT DENIED')
+    return { state: 'warn', word: 'deadline passed, not fixed' };
 
   // "Newly issued" (white) is a genuine recency call: under a year old, or a
   // correction deadline still ahead. An older notice - deadline-less ones
   // included - is not "new".
   if (s === 'INFO NOV SENT OUT') {
     return recent
-      ? { state: 'new', word: 'informational notice (no deadline)' }
-      : { state: 'stalled', word: `informational notice, on file since ${(n.nov || '').slice(0, 4) || 'issue'}` };
+      ? { state: 'new', word: 'informational notice, no deadline' }
+      : { state: 'stalled', word: `informational notice on file since ${yr(n.nov) || 'issue'}, no action` };
   }
   if (recent || deadlineAhead)
-    return { state: 'new', word: n.correctBy ? 'notice sent, deadline not yet due' : 'notice sent' };
+    return { state: 'new', word: n.correctBy ? 'just issued — deadline not reached' : 'just issued' };
   if (n.missed && n.frozen && n.yearsFrozen >= 2)
-    return { state: 'stalled', word: `no activity recorded since ${(n.statusDate || n.nov || '').slice(0, 4)}` };
+    return { state: 'stalled', word: `no activity on record since ${yr(n.statusDate) || yr(n.nov)}` };
   if (n.missed)
-    return { state: 'warn', word: 'past deadline, no response' };
+    return { state: 'warn', word: 'deadline passed, not fixed' };
   return { state: 'stalled', word: 'on file, no correction deadline recorded' };
 }
 const fmtDay = s => {
@@ -1015,13 +1035,25 @@ function renderTimeline(records) {
   if (list.length) groups.push([curYear, list]);
 
   const key = `<div id="tl-key">
-    <span><i class="k-good"></i>fixed</span>
-    <span><i class="k-follow"></i>in follow-up</span>
-    <span><i class="k-new"></i>newly issued</span>
-    <span><i class="k-warn"></i>overdue</span>
-    <span><i class="k-stalled"></i>stalled</span>
-    <span><i class="k-rejected"></i>cert. rejected</span>
-    <span><i class="k-admin"></i>paperwork not filed</span>
+    <div class="tl-key-chips">
+      <span><i class="k-good"></i>fixed</span>
+      <span><i class="k-follow"></i>city follow-up</span>
+      <span><i class="k-new"></i>newly issued</span>
+      <span><i class="k-warn"></i>past-due</span>
+      <span><i class="k-stalled"></i>frozen</span>
+      <span><i class="k-rejected"></i>cert. rejected</span>
+      <span><i class="k-admin"></i>paperwork not filed</span>
+      <button class="tl-key-toggle" type="button">what these mean</button>
+    </div>
+    <div class="tl-key-full">
+      <p><i class="k-good"></i><span><b>Fixed.</b> The landlord certified the repair was done and the city accepted it. Resolved, at least on record.</span></p>
+      <p><i class="k-follow"></i><span><b>City follow-up.</b> Something is still moving &mdash; a reinspection scheduled, a warning letter or civil penalty sent, an extension granted. Active, not resolved.</span></p>
+      <p><i class="k-new"></i><span><b>Newly issued.</b> Issued in the last year and the fix deadline hasn&rsquo;t passed. Too early to say anything.</span></p>
+      <p><i class="k-warn"></i><span><b>Past-due.</b> The deadline came and went with no accepted fix &mdash; marked &ldquo;not complied with,&rdquo; or the inspector couldn&rsquo;t get in to check.</span></p>
+      <p><i class="k-stalled"></i><span><b>Frozen.</b> Notice went out, deadline passed, then nothing for years. Could be the landlord ignoring it, could be the city never following up &mdash; the records can&rsquo;t say which.</span></p>
+      <p><i class="k-rejected"></i><span><b>Cert. rejected.</b> The landlord filed a certification claiming it was fixed, and the city rejected it as false or invalid.</span></p>
+      <p><i class="k-admin"></i><span><b>Paperwork not filed.</b> Not a repair. A filing the landlord is legally required to make &mdash; registering the building, the annual bedbug report, a required posted notice &mdash; and hasn&rsquo;t.</span></p>
+    </div>
   </div>`;
 
   body.innerHTML = key + groups.map(([yr, items]) => `
@@ -1052,6 +1084,8 @@ function renderTimeline(records) {
   body.querySelectorAll('.tl-head').forEach(h => {
     h.onclick = () => h.parentElement.classList.toggle('open');
   });
+  const keyToggle = body.querySelector('.tl-key-toggle');
+  if (keyToggle) keyToggle.onclick = () => document.getElementById('tl-key').classList.toggle('open');
 }
 
 /* Story / Evidence / Timeline tab switching */
