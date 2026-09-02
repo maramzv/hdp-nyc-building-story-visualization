@@ -915,6 +915,14 @@ function classifyNotice(n) {
   const deadlineAhead = n.correctBy && new Date(n.correctBy) > new Date();
 
   const yr = d => (d || '').slice(0, 4);
+  // How long since ANYTHING was recorded on this notice. 2+ years of that =
+  // frozen, whatever the last status says - an old "not complied with" with
+  // nothing since is just as dead as one that never moved off "notice sent".
+  const staleYrs = n.statusDate
+    ? (Date.now() - new Date(n.statusDate)) / (365 * 86400000)
+    : yrsOpen;
+  const stale = staleYrs >= 2;
+
   if (TL_FIXED.has(s))
     return { state: 'good', word: n.certified ? `landlord certified fixed in ${yr(n.certified)}, city accepted` : 'landlord certified fixed, city accepted' };
   if (TL_REJECTED.has(s))
@@ -925,9 +933,15 @@ function classifyNotice(n) {
   if (TL_FOLLOW.has(s))
     return { state: 'follow', word: `city still acting on it — ${tlStatusShort(n.status)}` };
   if (s.includes('NO ACCESS TO RE'))
-    return { state: 'warn', word: 'deadline passed — inspector could not get in to check' };
-  if (s === 'NOT COMPLIED WITH' || s === 'CERTIFICATION POSTPONMENT DENIED')
-    return { state: 'warn', word: 'deadline passed, not fixed' };
+    return stale
+      ? { state: 'stalled', word: `inspector was denied access in ${yr(n.statusDate)}, nothing since` }
+      : { state: 'warn', word: 'deadline passed — inspector could not get in to check' };
+  if (s === 'NOT COMPLIED WITH')
+    return stale
+      ? { state: 'stalled', word: `city marked it not complied in ${yr(n.statusDate)}, nothing since` }
+      : { state: 'warn', word: 'city inspected — not fixed' };
+  if (s === 'CERTIFICATION POSTPONMENT DENIED')
+    return { state: 'warn', word: 'extension denied — deadline stands' };
 
   // "Newly issued" (white) is a genuine recency call: under a year old, or a
   // correction deadline still ahead. An older notice - deadline-less ones
@@ -939,10 +953,10 @@ function classifyNotice(n) {
   }
   if (recent || deadlineAhead)
     return { state: 'new', word: n.correctBy ? 'just issued — deadline not reached' : 'just issued' };
-  if (n.missed && n.frozen && n.yearsFrozen >= 2)
-    return { state: 'stalled', word: `no activity on record since ${yr(n.statusDate) || yr(n.nov)}` };
+  if (n.missed && stale)
+    return { state: 'stalled', word: `no city follow-up, nothing on record since ${yr(n.statusDate) || yr(n.nov)}` };
   if (n.missed)
-    return { state: 'warn', word: 'deadline passed, not fixed' };
+    return { state: 'warn', word: 'deadline passed, no response' };
   return { state: 'stalled', word: 'on file, no correction deadline recorded' };
 }
 const fmtDay = s => {
@@ -998,13 +1012,20 @@ function noticeDetailHTML(n) {
   const row = (k, v, cls) => v ? `<dt>${k}</dt><dd class="${cls || ''}">${v}</dd>` : '';
   let statusLine = tlStatusShort(n.status);
   if (n.statusDate) statusLine += ` (as of ${fmtDay(n.statusDate)})`;
+  // A certification date with a non-accepted current status means the owner
+  // filed a claim the city didn't honour - show it, but not in green.
+  let certCell, certTone;
+  if (n.certified && n.isCertified) { certCell = fmtDay(n.certified); certTone = 'done-t'; }
+  else if (n.certified) { certCell = `${fmtDay(n.certified)} — not accepted by the city`; certTone = 'miss-t'; }
+  else if (n.correctBy) { certCell = 'never'; certTone = 'miss-t'; }
+  else { certCell = ''; certTone = ''; }
   return `<dl>
     ${row('inspected', fmtDay(n.insp))}
     ${row('HPD approved', fmtDay(n.approved))}
     ${row('notice issued', fmtDay(n.nov))}
     ${row('fix-by deadline', fmtDay(n.correctBy) + (n.missed ? ' — missed' : (n.correctBy ? '' : '')), n.missed ? 'miss-t' : '')}
     ${row('self-report deadline', fmtDay(n.certifyBy))}
-    ${row('owner certified', n.certified ? fmtDay(n.certified) : (n.correctBy ? 'never' : ''), n.certified ? 'done-t' : (n.correctBy ? 'miss-t' : ''))}
+    ${row('owner certified', certCell, certTone)}
     ${row('status now', statusLine)}
   </dl>`;
 }
