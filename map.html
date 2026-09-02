@@ -943,16 +943,24 @@ function classifyNotice(n) {
   if (s === 'CERTIFICATION POSTPONMENT DENIED')
     return { state: 'warn', word: 'extension denied — deadline stands' };
 
-  // "Newly issued" (white) is a genuine recency call: under a year old, or a
-  // correction deadline still ahead. An older notice - deadline-less ones
-  // included - is not "new".
   if (s === 'INFO NOV SENT OUT') {
     return recent
       ? { state: 'new', word: 'informational notice, no deadline' }
       : { state: 'stalled', word: `informational notice on file since ${yr(n.nov) || 'issue'}, no action` };
   }
-  if (recent || deadlineAhead)
-    return { state: 'new', word: n.correctBy ? 'just issued — deadline not reached' : 'just issued' };
+
+  // "Newly issued" (white) = the fix window is still open. Two ways in:
+  // issued in the last ~month (process hasn't started), or the correction
+  // deadline is still in the future. Once the deadline passes it's amber or
+  // grey, never white - so every white label can honestly say "not passed".
+  const daysOpen = issuedTs ? Math.round((Date.now() - issuedTs) / 86400000) : 1e9;
+  if (daysOpen <= 30)
+    return { state: 'new', word: `just issued (${daysOpen} day${daysOpen === 1 ? '' : 's'} ago)` };
+  if (deadlineAhead)
+    return { state: 'new', word: `issued ${fmtMon(n.nov)} — still within the fix window, deadline has not passed` };
+  if (recent && !n.correctBy)
+    return { state: 'new', word: `issued ${fmtMon(n.nov)} — no fix deadline set yet` };
+
   if (n.missed && stale)
     return { state: 'stalled', word: `no city follow-up, nothing on record since ${yr(n.statusDate) || yr(n.nov)}` };
   if (n.missed)
@@ -963,6 +971,11 @@ const fmtDay = s => {
   if (!s) return null;
   const d = new Date(s.slice(0, 10) + 'T00:00:00Z');
   return isNaN(d) ? null : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+};
+const fmtMon = s => {
+  if (!s) return 'recently';
+  const d = new Date(s.slice(0, 10) + 'T00:00:00Z');
+  return isNaN(d) ? 'recently' : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 };
 const yearOf = s => (s && /^\d{4}/.test(s)) ? s.slice(0, 4) : '—';
 
@@ -1059,7 +1072,7 @@ function renderTimeline(records) {
     <div class="tl-key-chips">
       <span><i class="k-good"></i>fixed</span>
       <span><i class="k-follow"></i>city follow-up</span>
-      <span><i class="k-new"></i>newly issued</span>
+      <span><i class="k-new"></i>newly issued (&lt;1 yr)</span>
       <span><i class="k-warn"></i>past-due</span>
       <span><i class="k-stalled"></i>frozen</span>
       <span><i class="k-rejected"></i>cert. rejected</span>
@@ -1069,7 +1082,7 @@ function renderTimeline(records) {
     <div class="tl-key-full">
       <p><i class="k-good"></i><span><b>Fixed.</b> The landlord certified the repair was done and the city accepted it. Resolved, at least on record.</span></p>
       <p><i class="k-follow"></i><span><b>City follow-up.</b> Something is still moving &mdash; a reinspection scheduled, a warning letter or civil penalty sent, an extension granted. Active, not resolved.</span></p>
-      <p><i class="k-new"></i><span><b>Newly issued.</b> Issued in the last year and the fix deadline hasn&rsquo;t passed. Too early to say anything.</span></p>
+      <p><i class="k-new"></i><span><b>Newly issued.</b> The fix window is still open &mdash; either issued in the last month, or the correction deadline is still in the future. Too early to say anything.</span></p>
       <p><i class="k-warn"></i><span><b>Past-due.</b> The deadline came and went with no accepted fix &mdash; marked &ldquo;not complied with,&rdquo; or the inspector couldn&rsquo;t get in to check.</span></p>
       <p><i class="k-stalled"></i><span><b>Frozen.</b> Notice went out, deadline passed, then nothing for years. Could be the landlord ignoring it, could be the city never following up &mdash; the records can&rsquo;t say which.</span></p>
       <p><i class="k-rejected"></i><span><b>Cert. rejected.</b> The landlord filed a certification claiming it was fixed, and the city rejected it as false or invalid.</span></p>
