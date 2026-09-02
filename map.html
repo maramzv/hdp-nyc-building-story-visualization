@@ -233,7 +233,7 @@
   .tab-pane.active { display: block; }
   #evidence-intro { font-size: 11.5px; color: #9aa1b2; line-height: 1.45; margin-bottom: 10px; }
   #evidence-count { color: #666c7c; display: block; margin-top: 2px; }
-  #evidence-table { display: none; max-height: 320px; overflow-y: auto; }
+  #evidence-table { display: none; max-height: 46vh; overflow-y: auto; }
   #evidence-table.open { display: block; }
 
   /* Timeline (tab): building-wide, grouped by year, each notice expands */
@@ -319,12 +319,15 @@
   #tl-key i.k-stalled { background: #5b646c; }
   #tl-key i.k-rejected { background: #d84b4b; }
   #tl-key i.k-admin { background: #a06fd6; }
-  .ev-row { font-size: 11px; padding: 7px 0; border-bottom: 1px solid #23273499; }
-  .ev-row .ev-top { display: flex; justify-content: space-between; color: #8a90a0; margin-bottom: 2px; }
-  .ev-row .ev-class-A { color: #e0c14c; font-weight: 600; }
-  .ev-row .ev-class-B { color: #e69a4c; font-weight: 600; }
-  .ev-row .ev-class-C { color: #e67a6e; font-weight: 600; }
-  .ev-row .ev-desc { color: #c4c7d1; line-height: 1.4; }
+  .ev-row { font-size: 11px; padding: 9px 0; border-bottom: 1px solid #23273499; }
+  .ev-row .ev-top { display: flex; justify-content: space-between; gap: 10px; color: #8a90a0; margin-bottom: 3px; }
+  .ev-row .ev-top > span:last-child { text-align: right; flex-shrink: 0; }
+  .ev-row .ev-class-A { color: #e0c14c; font-weight: 600; cursor: help; }
+  .ev-row .ev-class-B { color: #e69a4c; font-weight: 600; cursor: help; }
+  .ev-row .ev-class-C { color: #e67a6e; font-weight: 600; cursor: help; }
+  .ev-row .ev-class-I { color: #8a90a0; font-weight: 600; cursor: help; }
+  .ev-row .ev-desc { color: #c4c7d1; line-height: 1.45; }
+  .ev-row .ev-meta { color: #6a7180; font-size: 10px; line-height: 1.5; margin-top: 4px; }
   #evidence-more { font-size: 10.5px; color: #666c7c; padding-top: 6px; text-align: center; }
   #d-buildingid { font-size: 10.5px; color: #666c7c; margin-top: 12px; text-align: center; }
   #status { position: absolute; bottom: 34px; right: 8px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; z-index: 2; text-align: right; }
@@ -822,37 +825,65 @@ function renderSimilar(buildingid, pattern, neighborhood) {
 
 function buildEvidenceFromRecords(records) {
   const seen = new Set();
-  const trimmed = [];
+  const out = [];
   for (const v of records) {
-    let desc = (v.novdescription || '').trim();
-    if (desc.length > 140) {
-      const cut = desc.slice(0, 140);
-      desc = cut.slice(0, cut.lastIndexOf(' ')) + '...';
-    }
+    const desc = (v.novdescription || '').trim();         // full text, not truncated
     const date = v.novissueddate ? v.novissueddate.slice(0, 10) : null;
     const key = `${date}|${v.class}|${desc}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      trimmed.push({ date, class: v.class, status: v.currentstatus, description: desc });
-    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      date, class: v.class, status: v.currentstatus, description: desc,
+      ordernumber: v.ordernumber || null,
+      apartment: v.apartment || null,
+      story: v.story || null,
+      inspected: v.inspectiondate ? v.inspectiondate.slice(0, 10) : null,
+      correctBy: (v.newcorrectbydate || v.originalcorrectbydate || '').slice(0, 10) || null,
+      certifyBy: (v.newcertifybydate || v.originalcertifybydate || '').slice(0, 10) || null,
+      certified: v.certifieddate ? v.certifieddate.slice(0, 10) : null,
+      statusDate: v.currentstatusdate ? v.currentstatusdate.slice(0, 10) : null,
+      novid: v.novid || null,
+    });
   }
-  trimmed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  return trimmed;
+  out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return out;
 }
+
+const CLASS_MEANING = {
+  A: 'non-hazardous',
+  B: 'hazardous',
+  C: 'immediately hazardous — heat, hot water, fire, gas, lead, vermin',
+  I: 'order to repair / info — no correction deadline',
+};
 
 function renderEvidence(records) {
   const countEl = document.getElementById('evidence-count');
   const tableEl = document.getElementById('evidence-table');
-  countEl.textContent = `${records.length} record${records.length !== 1 ? 's' : ''} on file.`;
+  countEl.textContent = `${records.length} record${records.length !== 1 ? 's' : ''} on file — every one shown, in full.`;
   tableEl.classList.add('open');
-  const shown = records.slice(0, EVIDENCE_DISPLAY_LIMIT);
-  tableEl.innerHTML = shown.map(r => `
-    <div class="ev-row">
-      <div class="ev-top"><span class="${['A', 'B', 'C'].includes(r.class) ? 'ev-class-' + r.class : ''}">${r.date || 'no date'} · Class ${r.class || '?'}</span><span>${r.status || ''}</span></div>
-      <div class="ev-desc">${r.description || ''}</div>
-    </div>`).join('') +
-    (records.length > EVIDENCE_DISPLAY_LIMIT
-      ? `<div id="evidence-more">showing ${EVIDENCE_DISPLAY_LIMIT} of ${records.length} records</div>` : '');
+  const today = new Date();
+  tableEl.innerHTML = records.map(r => {
+    const clsSpan = ['A', 'B', 'C', 'I'].includes(r.class)
+      ? `<span class="ev-class-${r.class}" title="Class ${r.class} — ${CLASS_MEANING[r.class]}">Class ${r.class}</span>`
+      : `Class ${r.class || '?'}`;
+    const loc = [
+      r.apartment ? `Apt ${r.apartment}` : null,
+      r.story ? `${r.story === '0' ? 'ground' : r.story} floor` : null,
+    ].filter(Boolean).join(' · ');
+    const missed = r.correctBy && new Date(r.correctBy) < today && !r.certified;
+    const meta = [
+      loc || 'common area',
+      r.ordernumber ? `order ${r.ordernumber}` : null,
+      r.inspected ? `inspected ${r.inspected}` : null,
+      r.correctBy ? `fix-by ${r.correctBy}${missed ? ' (missed)' : ''}` : 'no fix deadline',
+      r.certified ? `certified ${r.certified}` : (r.correctBy ? 'never certified' : null),
+    ].filter(Boolean).join(' &middot; ');
+    return `<div class="ev-row">
+      <div class="ev-top"><span>${r.date || 'no date'} &middot; ${clsSpan}</span><span>${r.status || ''}${r.statusDate ? ` (${r.statusDate})` : ''}</span></div>
+      <div class="ev-desc">${r.description || '(no description on record)'}</div>
+      <div class="ev-meta">${meta}</div>
+    </div>`;
+  }).join('');
 }
 
 /* ---------- Timeline tab: the building's full history, notice by notice ----------
