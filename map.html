@@ -963,40 +963,47 @@ function classifyNotice(n) {
       + (yrsOpen >= 1 ? ` — ${yrsOpen} yr${yrsOpen > 1 ? 's' : ''}` : '') };
   if (TL_FOLLOW.has(s))
     return { state: 'follow', word: `city still acting on it — ${tlStatusShort(n.status)}` };
-  if (s.includes('NO ACCESS TO RE'))
-    return stale
-      ? { state: 'stalled', word: `inspector was denied access in ${yr(n.statusDate)}, nothing since` }
-      : { state: 'warn', word: 'deadline passed — inspector could not get in to check' };
-  if (s === 'NOT COMPLIED WITH')
-    return stale
-      ? { state: 'stalled', word: `city marked it not complied in ${yr(n.statusDate)}, nothing since` }
-      : { state: 'warn', word: 'city inspected — not fixed' };
-  if (s === 'CERTIFICATION POSTPONMENT DENIED')
-    return { state: 'warn', word: 'extension denied — deadline stands' };
 
-  if (s === 'INFO NOV SENT OUT') {
+  // ---- The core is the deadline: has the fix deadline passed, and how long
+  // has the record been dead since? newly issued -> past-due -> frozen. ----
+
+  // No correction deadline on record (informational notices, data gaps).
+  if (!n.correctBy) {
+    if (s === 'INFO NOV SENT OUT')
+      return recent
+        ? { state: 'new', word: 'informational notice, no deadline' }
+        : { state: 'stalled', word: `informational notice on file since ${yr(n.nov) || 'issue'}, no action` };
     return recent
-      ? { state: 'new', word: 'informational notice, no deadline' }
-      : { state: 'stalled', word: `informational notice on file since ${yr(n.nov) || 'issue'}, no action` };
+      ? { state: 'new', word: `issued ${fmtMon(n.nov)} — no fix deadline on record` }
+      : { state: 'stalled', word: `on file since ${yr(n.nov)}, no deadline, no action` };
   }
 
-  // "Newly issued" (white) = the fix window is still open. Two ways in:
-  // issued in the last ~month (process hasn't started), or the correction
-  // deadline is still in the future. Once the deadline passes it's amber or
-  // grey, never white - so every white label can honestly say "not passed".
-  const daysOpen = issuedTs ? Math.round((Date.now() - issuedTs) / 86400000) : 1e9;
-  if (daysOpen <= 30)
-    return { state: 'new', word: `just issued (${daysOpen} day${daysOpen === 1 ? '' : 's'} ago)` };
-  if (deadlineAhead)
-    return { state: 'new', word: `issued ${fmtMon(n.nov)} — still within the fix window, deadline has not passed` };
-  if (recent && !n.correctBy)
-    return { state: 'new', word: `issued ${fmtMon(n.nov)} — no fix deadline set yet` };
+  // Deadline still ahead -> newly issued.
+  if (!n.missed) {
+    const daysOpen = issuedTs ? Math.round((Date.now() - issuedTs) / 86400000) : 999;
+    return daysOpen <= 30
+      ? { state: 'new', word: `just issued (${daysOpen} day${daysOpen === 1 ? '' : 's'} ago) — fix deadline ${fmtDay(n.correctBy)}` }
+      : { state: 'new', word: `fix deadline is ${fmtDay(n.correctBy)} — not passed yet` };
+  }
 
-  if (n.missed && stale)
+  // Deadline passed. 2+ years dead since -> frozen; otherwise -> past-due,
+  // and always spell out how long ago the deadline blew (a few days vs a
+  // year reads very differently, especially for a short-fuse Class C).
+  if (stale) {
+    if (s === 'NOT COMPLIED WITH')
+      return { state: 'stalled', word: `city marked it not complied in ${yr(n.statusDate)}, nothing since` };
+    if (s.includes('NO ACCESS TO RE'))
+      return { state: 'stalled', word: `inspector was denied access in ${yr(n.statusDate)}, nothing since` };
     return { state: 'stalled', word: `no city follow-up, nothing on record since ${yr(n.statusDate) || yr(n.nov)}` };
-  if (n.missed)
-    return { state: 'warn', word: 'deadline passed, no response' };
-  return { state: 'stalled', word: 'on file, no correction deadline recorded' };
+  }
+  const gap = agoText(n.correctBy);
+  if (s === 'NOT COMPLIED WITH')
+    return { state: 'warn', word: `city inspected, not fixed — deadline passed ${gap}` };
+  if (s.includes('NO ACCESS TO RE'))
+    return { state: 'warn', word: `inspector could not get in to check — deadline passed ${gap}` };
+  if (s === 'CERTIFICATION POSTPONMENT DENIED')
+    return { state: 'warn', word: `extension denied — deadline passed ${gap}` };
+  return { state: 'warn', word: `deadline passed ${gap}, no response` };
 }
 const fmtDay = s => {
   if (!s) return null;
@@ -1007,6 +1014,19 @@ const fmtMon = s => {
   if (!s) return 'recently';
   const d = new Date(s.slice(0, 10) + 'T00:00:00Z');
   return isNaN(d) ? 'recently' : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+};
+// Human "how long ago" - days for the first ~6 weeks, then months, then years.
+// So a Class C that blew a 5-day deadline last week reads clearly different
+// from one that blew it a year ago, without a separate marker.
+const agoText = s => {
+  if (!s) return 'recently';
+  const days = Math.round((Date.now() - new Date(s.slice(0, 10) + 'T00:00:00Z')) / 86400000);
+  if (days < 0) return 'soon';
+  if (days <= 45) return `${days} day${days === 1 ? '' : 's'} ago`;
+  const months = Math.round(days / 30.44);
+  if (months < 24) return `${months} month${months === 1 ? '' : 's'} ago`;
+  const years = Math.round(days / 365.25);
+  return `${years} year${years === 1 ? '' : 's'} ago`;
 };
 const yearOf = s => (s && /^\d{4}/.test(s)) ? s.slice(0, 4) : '—';
 
@@ -1113,8 +1133,8 @@ function renderTimeline(records) {
     <div class="tl-key-full">
       <p><i class="k-good"></i><span><b>Fixed.</b> The landlord certified the repair was done and the city accepted it. Resolved, at least on record.</span></p>
       <p><i class="k-follow"></i><span><b>City follow-up.</b> Something is still moving &mdash; a reinspection scheduled, a warning letter or civil penalty sent, an extension granted. Active, not resolved.</span></p>
-      <p><i class="k-new"></i><span><b>Newly issued.</b> The fix window is still open &mdash; issued in the last month, or the correction deadline is still in the future. Too early to say anything.</span></p>
-      <p><i class="k-warn"></i><span><b>Past-due.</b> The deadline passed with no accepted fix, and it&rsquo;s recent enough that the case still looks active &mdash; the city marked it &ldquo;not complied with,&rdquo; an inspector was turned away, or an extension request was denied. After ~2 years with nothing further it becomes Frozen.</span></p>
+      <p><i class="k-new"></i><span><b>Newly issued.</b> The fix deadline hasn&rsquo;t passed yet &mdash; however short (a Class C can carry a 5-day deadline) or long. Too early to say anything.</span></p>
+      <p><i class="k-warn"></i><span><b>Past-due.</b> The fix deadline has passed with no accepted repair. Each label spells out how long ago it blew &mdash; a few days reads very differently from a year, especially on a short-fuse Class C. After ~2 years with nothing further it becomes Frozen.</span></p>
       <p><i class="k-stalled"></i><span><b>Frozen.</b> Nothing has been recorded in ~2 years. The deadline passed &mdash; or there never was one, as with an old informational notice &mdash; then silence. Could be the landlord ignoring it, could be the city never following up; the records can&rsquo;t say which.</span></p>
       <p><i class="k-rejected"></i><span><b>Cert. rejected.</b> The landlord filed a certification claiming it was fixed, and the city rejected it as false or invalid.</span></p>
       <p><i class="k-admin"></i><span><b>Paperwork not filed.</b> Not a repair. A filing the landlord is legally required to make &mdash; registering the building, the annual bedbug report, a required posted notice &mdash; and hasn&rsquo;t.</span></p>
