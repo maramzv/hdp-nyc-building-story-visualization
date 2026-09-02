@@ -22,7 +22,11 @@
      cards, the timeline) that was cramped and low-contrast at 320px - widen
      it and bump the type up while a building is open, back to 320 for the
      directory. */
-  #panel.wide { width: 468px; }
+  #panel.wide {
+    width: 468px;
+    background: rgba(14, 16, 22, 0.85);
+    backdrop-filter: blur(17px); -webkit-backdrop-filter: blur(17px);
+  }
   #panel.wide #detail h2 { font-size: 15px; }
   #panel.wide #detail .addr { font-size: 14px; }
   #panel.wide #detail .narrative { font-size: 14px; line-height: 1.6; }
@@ -268,9 +272,9 @@
   .tl-item.tl-admin::before    { border-color: #a06fd6; background: #a06fd6; }
   .tl-head { cursor: pointer; user-select: none; font-size: 11px; line-height: 1.4; }
   .tl-head:hover { color: #fff; }
-  .tl-when { display: block; font-size: 9.5px; color: #767c8c; }
+  .tl-when { display: block; font-size: 9.5px; color: #9098a6; }
   .tl-what { color: #c4c7d1; }
-  .tl-note { color: #767c8c; }
+  .tl-note { color: #9098a6; font-weight: 500; }
   .tl-note.t-good { color: #2bb24d; }
   .tl-note.t-follow { color: #4b93d1; }
   .tl-note.t-new { color: #ffffff; }
@@ -291,11 +295,11 @@
   #timeline-empty { font-size: 11.5px; color: #767c8c; font-style: italic; padding: 6px 0; }
   #timeline-more { font-size: 10px; color: #666c7c; text-align: center; padding: 6px 0 2px; }
   #tl-key {
-    font-size: 9.5px; color: #767c8c;
+    font-size: 9.5px; color: #a6adbb;
     padding: 0 0 10px; margin-bottom: 6px; border-bottom: 1px solid #23273499;
   }
   .tl-key-chips { display: flex; flex-wrap: wrap; gap: 4px 11px; align-items: center; }
-  .tl-key-chips > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .tl-key-chips > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-weight: 500; }
   #tl-key i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .tl-key-toggle {
     background: none; border: none; font: inherit; font-size: 9.5px; color: #7d8bff;
@@ -306,7 +310,7 @@
   #tl-key.open .tl-key-full { display: block; }
   #tl-key.open .tl-key-toggle { color: #767c8c; }
   .tl-key-full p {
-    font-size: 10px; line-height: 1.5; color: #9aa1b2; margin: 0 0 7px;
+    font-size: 10px; line-height: 1.5; color: #b3b9c6; margin: 0 0 7px;
     display: flex; gap: 7px; align-items: flex-start;
   }
   .tl-key-full p:last-child { margin-bottom: 0; }
@@ -327,7 +331,7 @@
   .ev-row .ev-class-C { color: #e67a6e; font-weight: 600; cursor: help; }
   .ev-row .ev-class-I { color: #8a90a0; font-weight: 600; cursor: help; }
   .ev-row .ev-desc { color: #c4c7d1; line-height: 1.45; }
-  .ev-row .ev-meta { color: #6a7180; font-size: 10px; line-height: 1.5; margin-top: 4px; }
+  .ev-row .ev-meta { color: #8a91a0; font-size: 10px; line-height: 1.5; margin-top: 4px; }
   #evidence-more { font-size: 10.5px; color: #666c7c; padding-top: 6px; text-align: center; }
   #d-buildingid { font-size: 10.5px; color: #666c7c; margin-top: 12px; text-align: center; }
   #status { position: absolute; bottom: 34px; right: 8px; color: #9aa1b2; font-size: 11px; background: rgba(20,22,30,0.8); padding: 6px 10px; border-radius: 6px; z-index: 2; text-align: right; }
