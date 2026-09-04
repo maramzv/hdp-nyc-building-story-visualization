@@ -15,6 +15,16 @@ ACCEPTED_CERT_STATUSES = {"NOV CERTIFIED ON TIME", "NOV CERTIFIED LATE"}
 P90_OVERDUE_DAYS = 9.7 * 365
 P99_OVERDUE_DAYS = 25.2 * 365
 MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT = 3
+# "Recent" violation activity is measured over this window. Started at 365;
+# widened to 730 because HPD correction deadlines plus the certification
+# back-and-forth routinely run 6-18 months, so a 14-month-old violation is
+# often still an active matter, not a cold case - and at 365 days three of
+# every four buildings citywide landed in the least-active bucket.
+RECENT_WINDOW_DAYS = 730
+# A "frozen" violation must have been in its stuck state (deadline passed,
+# status never moved off issuance) for at least this many years - short of
+# it, the lapse is more likely re-inspection lag than abandonment.
+FROZEN_MIN_YEARS = 3
 # p75 of real_defect_count within the Isolated/Widespread candidate pool
 # (buildings with >=1 real defect and no Persistent/Chronic recurring
 # signature; n=106,669, calibrated via scripts/calibrate_real_defect_count.py
@@ -157,10 +167,11 @@ def _level_scale(n):
 
 
 def _level_recency(ratio):
+    # ratio = share of open violations issued within RECENT_WINDOW_DAYS.
     if ratio < 0.15:
-        return "Dormant"
+        return "Gone quiet"
     if ratio <= 0.70:
-        return "Mixed"
+        return "Ongoing"
     return "Active surge"
 
 
@@ -265,7 +276,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         nov_date = _parse_date(v.get("novissueddate"))
         cls = v.get("class")
         status = v.get("currentstatus")
-        is_recent = bool(nov_date and (today - nov_date).days <= 365)
+        is_recent = bool(nov_date and (today - nov_date).days <= RECENT_WINDOW_DAYS)
 
         if is_recent:
             recent_count += 1
@@ -299,10 +310,14 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
                 years_since_status = (today - status_date).days / 365
                 if years_since_status >= 5:
                     stale_status_count += 1
-                # "Frozen": status never moved past issuance, and the
-                # correction deadline is in the past.
+                # "Frozen": status never moved past issuance, the correction
+                # deadline is in the past, AND that has been the state for
+                # 3+ years. The age floor is what separates this from an
+                # ordinary recent violation whose short (Class C) deadline has
+                # lapsed while the city works through its re-inspection queue -
+                # without it, a fresh 300-violation dump reads as "300 frozen".
                 never_moved = nov_date and (status_date - nov_date).days <= 14
-                if never_moved and deadline and deadline < today:
+                if never_moved and deadline and deadline < today and years_since_status >= FROZEN_MIN_YEARS:
                     frozen_overdue_count += 1
                     frozen_years_max = max(frozen_years_max, years_since_status)
 
@@ -385,7 +400,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     # alongside Chronic/Persistent just as easily as Isolated (the same
     # recurring defect can also be one nobody's ever certified or revisited).
     p.long_unresolved = (
-        p.recency == "Dormant"
+        p.recency == "Gone quiet"
         and p.engagement == "Untested"
         and p.backlog_age in ("Very aged", "Extreme")
     )
@@ -401,19 +416,19 @@ def generate_narrative(p: BuildingProfile) -> str:
     # Scale + recency + severity opener
     if p.recency == "Active surge":
         if p.active_count == 1:
-            opener = "The one violation on file was issued in the past year"
+            opener = "The one violation on file was issued in the past two years"
         else:
             if p.recency_ratio >= 0.98:
-                recency_phrase = "all issued in the past year"
+                recency_phrase = "all issued in the past two years"
             elif p.recency_ratio >= 0.90:
-                recency_phrase = f"nearly all ({p.recent_count} of {p.active_count}) issued in the past year"
+                recency_phrase = f"nearly all ({p.recent_count} of {p.active_count}) issued in the past two years"
             else:
-                recency_phrase = f"the large majority ({p.recent_count} of {p.active_count}) issued in the past year"
+                recency_phrase = f"the large majority ({p.recent_count} of {p.active_count}) issued in the past two years"
             opener = f"A wave of {p.active_count} violations, {recency_phrase}"
-    elif p.recency == "Dormant":
-        opener = f"{p.active_count} open violation{'s' if p.active_count != 1 else ''}, with little to no activity in the past year"
+    elif p.recency == "Gone quiet":
+        opener = f"{p.active_count} open violation{'s' if p.active_count != 1 else ''}, with little to no activity in the past two years"
     else:
-        opener = f"{p.active_count} open violations, {p.recent_count} of them issued in the past year"
+        opener = f"{p.active_count} open violations, {p.recent_count} of them issued in the past two years"
     if p.class_c_total > 0:
         opener += f", {p.class_c_total} of them serious (Class C)"
     parts.append(opener + ".")
@@ -497,13 +512,24 @@ def generate_narrative(p: BuildingProfile) -> str:
         parts.append(f"Certification attempts have had mixed outcomes ({p.accepted_cert} accepted, {p.rejected_cert} rejected).")
 
     # Backlog age. Deliberately one sentence regardless of long_unresolved -
-    # that flag requires Dormant recency and Untested engagement by
+    # that flag requires Gone-quiet recency and Untested engagement by
     # definition, both of which the opener and Engagement sentence above
     # have *already* stated by the time this runs, in whatever wording their
     # own branch used. A long_unresolved-specific variant here inevitably
     # re-says one of those facts in different words no matter how it's
     # phrased - that's what kept resurfacing as "yet another" duplicate.
-    if p.backlog_age in ("Very aged", "Extreme"):
+    # When the timeline dates are on hand and several violations are provably
+    # abandoned (deadline passed, status never moved off issuance, nothing
+    # recorded since), say so with the hard count - it's a sharper, more
+    # certain statement than "Gone quiet" and it subsumes the oldest-deadline
+    # sentence, so that one is skipped in this branch.
+    if p.timeline_fields_present and p.frozen_overdue_count >= 2:
+        parts.append(
+            f"{p.frozen_overdue_count} of these violations are frozen: the correction "
+            f"deadline passed and nothing has been recorded since, from the owner or the "
+            f"city. The longest has sat {int(p.frozen_years_max)} years."
+        )
+    elif p.backlog_age in ("Very aged", "Extreme"):
         parts.append(f"The oldest outstanding violation is {p.max_years_overdue:.1f} years past its correction deadline.")
 
     return " ".join(parts)

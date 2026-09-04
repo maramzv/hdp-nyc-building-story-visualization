@@ -14,6 +14,10 @@
 const NON_COMPLIANCE_STATUSES = new Set(["NOT COMPLIED WITH", "FALSE CERTIFICATION", "INVALID CERTIFICATION"]);
 const ACCEPTED_CERT_STATUSES = new Set(["NOV CERTIFIED ON TIME", "NOV CERTIFIED LATE"]);
 const MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT = 3;
+// "Recent" violation activity window - see building_story.py for the rationale.
+const RECENT_WINDOW_DAYS = 730;
+// Minimum years a violation must have been frozen to count - see building_story.py.
+const FROZEN_MIN_YEARS = 3;
 // p75 of real_defect_count within the Isolated/Widespread candidate pool -
 // see the matching comment in building_story.py.
 const REAL_DEFECT_WIDESPREAD_THRESHOLD = 9;
@@ -70,8 +74,9 @@ function levelScale(n) {
 }
 
 function levelRecency(ratio) {
-  if (ratio < 0.15) return "Dormant";
-  if (ratio <= 0.70) return "Mixed";
+  // ratio = share of open violations issued within RECENT_WINDOW_DAYS.
+  if (ratio < 0.15) return "Gone quiet";
+  if (ratio <= 0.70) return "Ongoing";
   return "Active surge";
 }
 
@@ -150,7 +155,7 @@ function buildProfile(buildingid, violations, today) {
     const novDate = parseDate(v.novissueddate);
     const cls = v.class;
     const status = v.currentstatus;
-    const isRecent = !!(novDate && daysBetween(today, novDate) <= 365);
+    const isRecent = !!(novDate && daysBetween(today, novDate) <= RECENT_WINDOW_DAYS);
 
     if (isRecent) {
       recentCount++;
@@ -175,8 +180,9 @@ function buildProfile(buildingid, violations, today) {
       if (statusDate) {
         const yearsSinceStatus = daysBetween(today, statusDate) / 365;
         if (yearsSinceStatus >= 5) staleStatusCount++;
+        // 3+ year age floor - see the matching comment in building_story.py.
         const neverMoved = novDate && daysBetween(statusDate, novDate) <= 14;
-        if (neverMoved && deadline && deadline < today) {
+        if (neverMoved && deadline && deadline < today && yearsSinceStatus >= FROZEN_MIN_YEARS) {
           frozenOverdueCount++;
           frozenYearsMax = Math.max(frozenYearsMax, yearsSinceStatus);
         }
@@ -271,7 +277,7 @@ function buildProfile(buildingid, violations, today) {
   // Independent of pattern (recurrence) - see the matching comment in
   // building_story.py for why this isn't folded into levelPattern().
   p.long_unresolved = (
-    p.recency === "Dormant" &&
+    p.recency === "Gone quiet" &&
     p.engagement === "Untested" &&
     (p.backlog_age === "Very aged" || p.backlog_age === "Extreme")
   );
@@ -284,22 +290,22 @@ function generateNarrative(p) {
   let opener;
   if (p.recency === "Active surge") {
     if (p.active_count === 1) {
-      opener = "The one violation on file was issued in the past year";
+      opener = "The one violation on file was issued in the past two years";
     } else {
       let recencyPhrase;
       if (p.recency_ratio >= 0.98) {
-        recencyPhrase = "all issued in the past year";
+        recencyPhrase = "all issued in the past two years";
       } else if (p.recency_ratio >= 0.90) {
-        recencyPhrase = `nearly all (${p.recent_count} of ${p.active_count}) issued in the past year`;
+        recencyPhrase = `nearly all (${p.recent_count} of ${p.active_count}) issued in the past two years`;
       } else {
-        recencyPhrase = `the large majority (${p.recent_count} of ${p.active_count}) issued in the past year`;
+        recencyPhrase = `the large majority (${p.recent_count} of ${p.active_count}) issued in the past two years`;
       }
       opener = `A wave of ${p.active_count} violations, ${recencyPhrase}`;
     }
-  } else if (p.recency === "Dormant") {
-    opener = `${p.active_count} open violation${p.active_count !== 1 ? "s" : ""}, with little to no activity in the past year`;
+  } else if (p.recency === "Gone quiet") {
+    opener = `${p.active_count} open violation${p.active_count !== 1 ? "s" : ""}, with little to no activity in the past two years`;
   } else {
-    opener = `${p.active_count} open violations, ${p.recent_count} of them issued in the past year`;
+    opener = `${p.active_count} open violations, ${p.recent_count} of them issued in the past two years`;
   }
   if (p.class_c_total > 0) {
     opener += `, ${p.class_c_total} of them serious (Class C)`;
@@ -376,9 +382,17 @@ function generateNarrative(p) {
     parts.push(`Certification attempts have had mixed outcomes (${p.accepted_cert} accepted, ${p.rejected_cert} rejected).`);
   }
 
-  // One sentence regardless of long_unresolved - see the matching comment
-  // in building_story.py.
-  if (p.backlog_age === "Very aged" || p.backlog_age === "Extreme") {
+  // When the timeline dates are on hand and several violations are provably
+  // abandoned (deadline passed, status never moved off issuance, nothing
+  // recorded since), say so with the hard count - see the matching comment
+  // in building_story.py. It subsumes the oldest-deadline sentence.
+  if (p.timeline_fields_present && p.frozen_overdue_count >= 2) {
+    parts.push(
+      `${p.frozen_overdue_count} of these violations are frozen: the correction ` +
+      `deadline passed and nothing has been recorded since, from the owner or the ` +
+      `city. The longest has sat ${Math.floor(p.frozen_years_max)} years.`
+    );
+  } else if (p.backlog_age === "Very aged" || p.backlog_age === "Extreme") {
     parts.push(`The oldest outstanding violation is ${p.max_years_overdue.toFixed(1)} years past its correction deadline.`);
   }
 

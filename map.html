@@ -946,7 +946,7 @@ function classifyNotice(n) {
   const s = (n.status || '').toUpperCase();
   const issuedTs = n.nov ? new Date(n.nov).getTime() : (n.insp ? new Date(n.insp).getTime() : 0);
   const yrsOpen = issuedTs ? Math.floor((Date.now() - issuedTs) / (365 * 86400000)) : 0;
-  const recent = issuedTs && (Date.now() - issuedTs) / 86400000 <= 365;
+  const recent = issuedTs && (Date.now() - issuedTs) / 86400000 <= 730;
   const deadlineAhead = n.correctBy && new Date(n.correctBy) > new Date();
 
   const yr = d => (d || '').slice(0, 4);
@@ -1294,11 +1294,14 @@ function buildDimDetail(key, profile, evidence, records) {
     observed = `${profile.active_count} open violation${profile.active_count !== 1 ? 's' : ''} on record right now.`;
     rows = evidence.slice(0, 3);
   } else if (key === 'Recency') {
-    meaning = 'Share of open violations filed in just the last year.';
-    rows = evidence.filter(r => r.date && (new Date(r.date) >= new Date(Date.now() - 365 * 86400000)));
+    meaning = 'Share of open violations issued in the last two years.';
+    rows = evidence.filter(r => r.date && (new Date(r.date) >= new Date(Date.now() - 730 * 86400000)));
     observed = rows.length
-      ? `${profile.recent_count} of ${profile.active_count} open violations (${Math.round(profile.recency_ratio * 100)}%) were issued in the past year.`
-      : `None of the ${profile.active_count} open violations were issued in the past year — everything here is older.`;
+      ? `${profile.recent_count} of ${profile.active_count} open violations (${Math.round(profile.recency_ratio * 100)}%) were issued in the past two years.`
+      : `None of the ${profile.active_count} open violations were issued in the past two years — everything here is older.`;
+    if (profile.timeline_fields_present && profile.frozen_overdue_count >= 1) {
+      observed += ` ${profile.frozen_overdue_count} ${profile.frozen_overdue_count === 1 ? 'is' : 'are'} frozen: past the correction deadline with nothing recorded since, the longest ${Math.floor(profile.frozen_years_max)} years.`;
+    }
   } else if (key === 'Severity') {
     meaning = 'Share of records that are Class C — HPD’s most hazardous tier: heat, hot water, fire, gas.';
     rows = evidence.filter(r => r.class === 'C');
@@ -1330,6 +1333,9 @@ function buildDimDetail(key, profile, evidence, records) {
   } else if (key === 'Backlog age') {
     meaning = 'Age of the single oldest missed repair deadline still on record.';
     observed = `The oldest missed deadline is ${profile.max_years_overdue.toFixed(1)} years past due.`;
+    if (profile.timeline_fields_present && profile.frozen_overdue_count >= 2) {
+      observed += ` And it isn't just one — ${profile.frozen_overdue_count} open violations are past deadline with no change to the record since.`;
+    }
     rows = evidence.slice(-1);
   }
 
