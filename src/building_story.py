@@ -115,6 +115,7 @@ class BuildingProfile:
     recency_ratio: float
     class_c_total: int
     class_c_recent: int
+    class_c_open: int
     class_c_rate: float
     non_compliance_total: int
     non_compliance_recent: int
@@ -175,9 +176,12 @@ def _level_recency(ratio):
     return "Active surge"
 
 
-def _level_severity(rate):
+def _level_severity(rate, class_c_open=0):
+    # Class C is HPD's immediately-hazardous tier (no heat, no gas, lead,
+    # collapse risk). A building with an uncertified one on the books is not
+    # "Low" severity however small its share of the total - floor at Elevated.
     if rate < 0.10:
-        return "Low"
+        return "Elevated" if class_c_open >= 1 else "Low"
     if rate <= 0.30:
         return "Elevated"
     if rate <= 0.70:
@@ -256,7 +260,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     active_count = len(deduped)
     real_defect_count = sum(1 for v in deduped if v.get("ordernumber") not in ADMINISTRATIVE_ORDERNUMBERS)
 
-    recent_count = class_c_recent = class_c_total = 0
+    recent_count = class_c_recent = class_c_total = class_c_open = 0
     non_compliance_total = non_compliance_recent = 0
     accepted_cert = rejected_cert = 0
     max_days_overdue = 0
@@ -312,6 +316,8 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         certified = status in ACCEPTED_CERT_STATUSES
         if deadline and deadline < today and not certified:
             max_days_overdue = max(max_days_overdue, (today - deadline).days)
+        if cls == "C" and not certified:
+            class_c_open += 1
 
         # Process-staleness (Findings 8/9): real, uncertified violations only.
         is_real = v.get("ordernumber") not in ADMINISTRATIVE_ORDERNUMBERS
@@ -376,6 +382,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
         recency_ratio=(recent_count / active_count) if active_count else 0.0,
         class_c_total=class_c_total,
         class_c_recent=class_c_recent,
+        class_c_open=class_c_open,
         class_c_rate=(class_c_total / active_count) if active_count else 0.0,
         non_compliance_total=non_compliance_total,
         non_compliance_recent=non_compliance_recent,
@@ -401,7 +408,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     )
     p.scale = _level_scale(p.active_count)
     p.recency = _level_recency(p.recency_ratio)
-    p.severity = _level_severity(p.class_c_rate)
+    p.severity = _level_severity(p.class_c_rate, p.class_c_open)
     p.engagement = _level_engagement(p.accepted_cert, p.rejected_cert, p.max_days_overdue)
     p.pattern = _level_pattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count)
     p.backlog_age = _level_backlog(p.max_days_overdue)

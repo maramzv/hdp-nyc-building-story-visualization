@@ -1272,12 +1272,12 @@ function shortLabel(description) {
       return loc ? `${toDefect(m)} · ${loc}` : toDefect(m);
     }
   }
-  return cleaned.length > 72 ? cleaned.slice(0, cleaned.lastIndexOf(' ', 72)) + '...' : cleaned;
+  return cleaned.length > 72 ? cleaned.slice(0, cleaned.lastIndexOf(' ', 72)) + '…' : cleaned;
 }
 
 function evMiniHTML(r) {
   const status = STATUS_SHORT[r.status] || r.status || '';
-  return `<div class="ev-mini"><span><span class="ev-c ${['A','B','C'].includes(r.class) ? r.class : ''}">${r.class||'?'}</span> · ${r.date||'no date'}</span><span class="ev-desc">${shortLabel(r.description)}${status ? ' — ' + status : ''}</span></div>`;
+  return `<div class="ev-mini"><span><span class="ev-c ${['A','B','C'].includes(r.class) ? r.class : ''}">${r.class||'?'}</span> · ${fmtDay(r.date) || 'no date'}</span><span class="ev-desc">${shortLabel(r.description)}${status ? ' — ' + status : ''}</span></div>`;
 }
 
 /**
@@ -1291,27 +1291,40 @@ function buildDimDetail(key, profile, evidence, records) {
 
   if (key === 'Scale') {
     meaning = 'How much is currently open — no accounting yet for severity or repeats.';
-    observed = `${profile.active_count} open violation${profile.active_count !== 1 ? 's' : ''} on record right now.`;
+    {
+      const admin = profile.active_count - profile.real_defect_count;
+      observed = admin > 0
+        ? `${profile.active_count} open — ${profile.real_defect_count} physical defect${profile.real_defect_count !== 1 ? 's' : ''} plus ${admin} administrative filing${admin !== 1 ? 's' : ''}.`
+        : `${profile.active_count} open violation${profile.active_count !== 1 ? 's' : ''}, all physical defects.`;
+    }
     rows = evidence.slice(0, 3);
   } else if (key === 'Recency') {
     meaning = 'Share of open violations issued in the last two years.';
-    rows = evidence.filter(r => r.date && (new Date(r.date) >= new Date(Date.now() - 730 * 86400000)));
-    observed = rows.length
+    const recentRows = evidence.filter(r => r.date && (new Date(r.date) >= new Date(Date.now() - 730 * 86400000)));
+    observed = recentRows.length
       ? `${profile.recent_count} of ${profile.active_count} open violations (${Math.round(profile.recency_ratio * 100)}%) were issued in the past two years.`
       : `None of the ${profile.active_count} open violations were issued in the past two years — everything here is older.`;
     if (profile.timeline_fields_present && profile.frozen_overdue_count >= 1) {
       observed += ` ${profile.frozen_overdue_count} ${profile.frozen_overdue_count === 1 ? 'is' : 'are'} frozen: past the correction deadline with nothing recorded since, the longest ${Math.floor(profile.frozen_years_max)} years.`;
     }
+    // When nothing is recent, the useful evidence is the oldest still-open ones.
+    rows = recentRows.length ? recentRows : evidence.slice(-3).reverse();
   } else if (key === 'Severity') {
-    meaning = 'Share of records that are Class C — HPD’s most hazardous tier: heat, hot water, fire, gas.';
+    meaning = 'Share of records that are Class C — HPD’s immediately-hazardous tier: no heat or hot water, gas leaks, lead paint, collapse risk, vermin.';
     rows = evidence.filter(r => r.class === 'C');
-    observed = `${profile.class_c_total} of ${profile.active_count} open violations (${Math.round(profile.class_c_rate * 100)}%) are Class C.`;
+    const pct = Math.round(profile.class_c_rate * 100);
+    observed = `${profile.class_c_total} of ${profile.active_count} open violations (${pct}%) are Class C.`;
+    if (profile.class_c_open >= 1 && pct < 10) {
+      observed += ` The share is small, but an uncertified Class C keeps this above Low — it is an emergency category.`;
+    }
   } else if (key === 'Engagement') {
     meaning = 'When a landlord fixes a violation they file a certification saying so, and the city accepts or rejects it. This tracks that back-and-forth — it takes at least 3 certifications to rate the pattern.';
     const attempts = profile.accepted_cert + profile.rejected_cert;
     if (profile.engagement === 'Unaddressed') {
       observed = `No certification has ever been filed for any of these violations, and the oldest deadline passed ${profile.max_years_overdue.toFixed(1)} years ago.`;
-      rows = [];
+      // Point to the violations whose deadlines are most blown.
+      const overdue = evidence.filter(r => r.correctBy && !r.certified && new Date(r.correctBy) < new Date());
+      rows = (overdue.length ? overdue : evidence).slice(-3).reverse();
     } else if (attempts === 0) {
       observed = 'No certification has been filed yet, and nothing here is long enough past deadline to read into that.';
       rows = [];
@@ -1369,7 +1382,7 @@ function buildDimDetail(key, profile, evidence, records) {
 function renderDims(profile, evidence, records) {
   const engagementValue = profile.engagement;
   const dims = [
-    ['Scale', 'How much is there?', `${profile.active_count} active violation${profile.active_count !== 1 ? 's' : ''}`],
+    ['Scale', 'How much is there?', `${profile.active_count} open violation${profile.active_count !== 1 ? 's' : ''}`],
     ['Recency', 'Is it happening now?', profile.recency],
     ['Severity', 'How serious is it?', profile.severity],
     ['Engagement', 'Has the owner responded?', engagementValue],
@@ -1706,7 +1719,7 @@ Promise.all([
         tooltip.style.display = 'block';
         tooltip.style.left = (info.x + 14) + 'px';
         tooltip.style.top = (info.y + 10) + 'px';
-        tooltip.innerHTML = `<div class="t-addr">${info.object.address}</div><div class="t-pattern">${info.object.pattern} · ${info.object.active_count} active</div>`;
+        tooltip.innerHTML = `<div class="t-addr">${info.object.address}</div><div class="t-pattern">${info.object.pattern} · ${info.object.active_count} open</div>`;
       } else {
         tooltip.style.display = 'none';
       }

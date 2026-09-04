@@ -80,8 +80,10 @@ function levelRecency(ratio) {
   return "Active surge";
 }
 
-function levelSeverity(rate) {
-  if (rate < 0.10) return "Low";
+function levelSeverity(rate, classCOpen = 0) {
+  // See the matching comment in building_story.py - an uncertified Class C
+  // floors severity at Elevated regardless of its share.
+  if (rate < 0.10) return classCOpen >= 1 ? "Elevated" : "Low";
   if (rate <= 0.30) return "Elevated";
   if (rate <= 0.70) return "Severe";
   return "Extreme";
@@ -140,7 +142,7 @@ function buildProfile(buildingid, violations, today) {
   const activeCount = deduped.length;
   const realDefectCount = deduped.filter(v => !ADMINISTRATIVE_ORDERNUMBERS.has(v.ordernumber)).length;
 
-  let recentCount = 0, classCRecent = 0, classCTotal = 0;
+  let recentCount = 0, classCRecent = 0, classCTotal = 0, classCOpen = 0;
   let nonComplianceTotal = 0, nonComplianceRecent = 0;
   let acceptedCert = 0, rejectedCert = 0;
   let maxDaysOverdue = 0;
@@ -179,6 +181,7 @@ function buildProfile(buildingid, violations, today) {
     if (deadline && deadline < today && !certified) {
       maxDaysOverdue = Math.max(maxDaysOverdue, daysBetween(today, deadline));
     }
+    if (cls === "C" && !certified) classCOpen++;
 
     // Process-staleness (Findings 8/9): real, uncertified violations only.
     const isReal = !ADMINISTRATIVE_ORDERNUMBERS.has(v.ordernumber);
@@ -252,6 +255,7 @@ function buildProfile(buildingid, violations, today) {
     recency_ratio: activeCount ? recentCount / activeCount : 0.0,
     class_c_total: classCTotal,
     class_c_recent: classCRecent,
+    class_c_open: classCOpen,
     class_c_rate: activeCount ? classCTotal / activeCount : 0.0,
     non_compliance_total: nonComplianceTotal,
     non_compliance_recent: nonComplianceRecent,
@@ -277,7 +281,7 @@ function buildProfile(buildingid, violations, today) {
   };
   p.scale = levelScale(p.active_count);
   p.recency = levelRecency(p.recency_ratio);
-  p.severity = levelSeverity(p.class_c_rate);
+  p.severity = levelSeverity(p.class_c_rate, p.class_c_open);
   p.engagement = levelEngagement(p.accepted_cert, p.rejected_cert, p.max_days_overdue);
   p.pattern = levelPattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count);
   p.backlog_age = levelBacklog(p.max_days_overdue);
