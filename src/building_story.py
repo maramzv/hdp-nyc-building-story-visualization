@@ -185,12 +185,17 @@ def _level_severity(rate):
     return "Extreme"
 
 
-def _level_engagement(accepted, rejected):
+def _level_engagement(accepted, rejected, days_overdue=0):
     attempts = accepted + rejected
     if attempts < MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT:
-        # Zero attempts: genuinely untested. 1-2 attempts: too little evidence
-        # for a confident behavioral claim, even though technically non-zero.
-        return "Untested"
+        # Zero attempts with a deadline already blown 90+ days is not "missing
+        # data" - it's the owner never responding. Distinguish that from a
+        # building whose violations are simply too new to have been certified
+        # yet (nothing overdue, or 1-2 attempts = some engagement, too little
+        # to rate the pattern).
+        if attempts == 0 and days_overdue >= 90:
+            return "Unaddressed"
+        return "Too early to tell"
     rate = accepted / attempts
     if rate < 0.30:
         return "Resistant"
@@ -221,14 +226,20 @@ def _level_pattern(n_persistent, n_chronic, real_defect_count):
 
 
 def _level_backlog(days):
+    # `days` = age of the oldest still-open, uncertified missed deadline; 0
+    # when nothing is actually overdue. Cutoffs unchanged from the calibrated
+    # ramp - only the labels, which used to read too gently ("Aging" for a
+    # deadline blown six years ago).
+    if days == 0:
+        return "Nothing overdue"
     years = days / 365
     if years < 2:
-        return "Current"
+        return "Recently overdue"
     if years <= 9.7:
-        return "Aging"
+        return "Years overdue"
     if years <= 25:
-        return "Very aged"
-    return "Extreme"
+        return "Long overdue"
+    return "Decades overdue"
 
 
 def build_profile(buildingid: str, violations: list[dict], today: datetime) -> BuildingProfile:
@@ -391,7 +402,7 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     p.scale = _level_scale(p.active_count)
     p.recency = _level_recency(p.recency_ratio)
     p.severity = _level_severity(p.class_c_rate)
-    p.engagement = _level_engagement(p.accepted_cert, p.rejected_cert)
+    p.engagement = _level_engagement(p.accepted_cert, p.rejected_cert, p.max_days_overdue)
     p.pattern = _level_pattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count)
     p.backlog_age = _level_backlog(p.max_days_overdue)
     # Independent of pattern (recurrence): true when nobody has ever engaged
@@ -401,8 +412,8 @@ def build_profile(buildingid: str, violations: list[dict], today: datetime) -> B
     # recurring defect can also be one nobody's ever certified or revisited).
     p.long_unresolved = (
         p.recency == "Gone quiet"
-        and p.engagement == "Untested"
-        and p.backlog_age in ("Very aged", "Extreme")
+        and p.engagement in ("Unaddressed", "Too early to tell")
+        and p.backlog_age in ("Long overdue", "Decades overdue")
     )
     return p
 
@@ -499,11 +510,16 @@ def generate_narrative(p: BuildingProfile) -> str:
         )
 
     # Engagement
-    if p.engagement == "Untested":
+    if p.engagement == "Unaddressed":
         if p.non_compliance_total > 0:
-            parts.append("No certifications have been accepted or rejected on record, though some violations show non-compliance status.")
+            parts.append("The correction deadlines have passed with no owner response — no certification has ever been filed, and some violations are flagged non-compliant.")
         else:
-            parts.append("No certification has ever been attempted for any of these violations.")
+            parts.append("The correction deadlines have passed and no certification has ever been filed for any of these violations.")
+    elif p.engagement == "Too early to tell":
+        if p.accepted_cert + p.rejected_cert > 0:
+            parts.append("Only one or two certifications are on record — too few to read the owner's pattern.")
+        else:
+            parts.append("No certification has been attempted yet for these violations.")
     elif p.engagement == "Responsive":
         parts.append(f"Every certification attempt on record has been accepted ({p.accepted_cert} of {p.accepted_cert + p.rejected_cert}).")
     elif p.engagement == "Resistant":
@@ -512,7 +528,7 @@ def generate_narrative(p: BuildingProfile) -> str:
         parts.append(f"Certification attempts have had mixed outcomes ({p.accepted_cert} accepted, {p.rejected_cert} rejected).")
 
     # Backlog age. Deliberately one sentence regardless of long_unresolved -
-    # that flag requires Gone-quiet recency and Untested engagement by
+    # that flag requires Gone-quiet recency and Unaddressed engagement by
     # definition, both of which the opener and Engagement sentence above
     # have *already* stated by the time this runs, in whatever wording their
     # own branch used. A long_unresolved-specific variant here inevitably
@@ -529,7 +545,7 @@ def generate_narrative(p: BuildingProfile) -> str:
             f"deadline passed and nothing has been recorded since, from the owner or the "
             f"city. The longest has sat {int(p.frozen_years_max)} years."
         )
-    elif p.backlog_age in ("Very aged", "Extreme"):
+    elif p.backlog_age in ("Long overdue", "Decades overdue"):
         parts.append(f"The oldest outstanding violation is {p.max_years_overdue:.1f} years past its correction deadline.")
 
     return " ".join(parts)

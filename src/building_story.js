@@ -87,9 +87,13 @@ function levelSeverity(rate) {
   return "Extreme";
 }
 
-function levelEngagement(accepted, rejected) {
+function levelEngagement(accepted, rejected, daysOverdue = 0) {
   const attempts = accepted + rejected;
-  if (attempts < MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT) return "Untested";
+  if (attempts < MIN_CERT_ATTEMPTS_FOR_ENGAGEMENT) {
+    // See the matching comment in building_story.py.
+    if (attempts === 0 && daysOverdue >= 90) return "Unaddressed";
+    return "Too early to tell";
+  }
   const rate = accepted / attempts;
   if (rate < 0.30) return "Resistant";
   if (rate <= 0.70) return "Mixed engagement";
@@ -105,11 +109,14 @@ function levelPattern(nPersistent, nChronic, realDefectCount) {
 }
 
 function levelBacklog(days) {
+  // See the matching comment in building_story.py - cutoffs unchanged, labels
+  // rewritten to stop reading gently.
+  if (days === 0) return "Nothing overdue";
   const years = days / 365;
-  if (years < 2) return "Current";
-  if (years <= 9.7) return "Aging";
-  if (years <= 25) return "Very aged";
-  return "Extreme";
+  if (years < 2) return "Recently overdue";
+  if (years <= 9.7) return "Years overdue";
+  if (years <= 25) return "Long overdue";
+  return "Decades overdue";
 }
 
 /**
@@ -271,15 +278,15 @@ function buildProfile(buildingid, violations, today) {
   p.scale = levelScale(p.active_count);
   p.recency = levelRecency(p.recency_ratio);
   p.severity = levelSeverity(p.class_c_rate);
-  p.engagement = levelEngagement(p.accepted_cert, p.rejected_cert);
+  p.engagement = levelEngagement(p.accepted_cert, p.rejected_cert, p.max_days_overdue);
   p.pattern = levelPattern(p.n_persistent_sigs, p.n_chronic_sigs, p.real_defect_count);
   p.backlog_age = levelBacklog(p.max_days_overdue);
   // Independent of pattern (recurrence) - see the matching comment in
   // building_story.py for why this isn't folded into levelPattern().
   p.long_unresolved = (
     p.recency === "Gone quiet" &&
-    p.engagement === "Untested" &&
-    (p.backlog_age === "Very aged" || p.backlog_age === "Extreme")
+    (p.engagement === "Unaddressed" || p.engagement === "Too early to tell") &&
+    (p.backlog_age === "Long overdue" || p.backlog_age === "Decades overdue")
   );
   return p;
 }
@@ -368,11 +375,17 @@ function generateNarrative(p) {
     parts.push(`${what} has recurred ${p.top_sig_notices} times over ${p.top_sig_span_years.toFixed(1)} years, ${where}.`);
   }
 
-  if (p.engagement === "Untested") {
+  if (p.engagement === "Unaddressed") {
     if (p.non_compliance_total > 0) {
-      parts.push("No certifications have been accepted or rejected on record, though some violations show non-compliance status.");
+      parts.push("The correction deadlines have passed with no owner response — no certification has ever been filed, and some violations are flagged non-compliant.");
     } else {
-      parts.push("No certification has ever been attempted for any of these violations.");
+      parts.push("The correction deadlines have passed and no certification has ever been filed for any of these violations.");
+    }
+  } else if (p.engagement === "Too early to tell") {
+    if (p.accepted_cert + p.rejected_cert > 0) {
+      parts.push("Only one or two certifications are on record — too few to read the owner's pattern.");
+    } else {
+      parts.push("No certification has been attempted yet for these violations.");
     }
   } else if (p.engagement === "Responsive") {
     parts.push(`Every certification attempt on record has been accepted (${p.accepted_cert} of ${p.accepted_cert + p.rejected_cert}).`);
@@ -392,7 +405,7 @@ function generateNarrative(p) {
       `deadline passed and nothing has been recorded since, from the owner or the ` +
       `city. The longest has sat ${Math.floor(p.frozen_years_max)} years.`
     );
-  } else if (p.backlog_age === "Very aged" || p.backlog_age === "Extreme") {
+  } else if (p.backlog_age === "Long overdue" || p.backlog_age === "Decades overdue") {
     parts.push(`The oldest outstanding violation is ${p.max_years_overdue.toFixed(1)} years past its correction deadline.`);
   }
 

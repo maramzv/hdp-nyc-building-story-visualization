@@ -1307,28 +1307,45 @@ function buildDimDetail(key, profile, evidence, records) {
     rows = evidence.filter(r => r.class === 'C');
     observed = `${profile.class_c_total} of ${profile.active_count} open violations (${Math.round(profile.class_c_rate * 100)}%) are Class C.`;
   } else if (key === 'Engagement') {
-    meaning = 'Whether the owner’s self-certifications have been accepted or rejected — needs at least 3 attempts before it will judge.';
+    meaning = 'When a landlord fixes a violation they file a certification saying so, and the city accepts or rejects it. This tracks that back-and-forth — it takes at least 3 certifications to rate the pattern.';
     const attempts = profile.accepted_cert + profile.rejected_cert;
-    if (attempts < 3) {
-      observed = 'No certification attempts on record yet — not enough history to judge.';
+    if (profile.engagement === 'Unaddressed') {
+      observed = `No certification has ever been filed for any of these violations, and the oldest deadline passed ${profile.max_years_overdue.toFixed(1)} years ago.`;
       rows = [];
+    } else if (attempts === 0) {
+      observed = 'No certification has been filed yet, and nothing here is long enough past deadline to read into that.';
+      rows = [];
+    } else if (attempts < 3) {
+      observed = `Only ${attempts} certification${attempts === 1 ? '' : 's'} on record (${profile.accepted_cert} accepted, ${profile.rejected_cert} rejected) — too few to rate the pattern.`;
+      rows = evidence.filter(r => CERT_STATUSES.includes(r.status));
     } else {
       observed = `${profile.accepted_cert} accepted, ${profile.rejected_cert} rejected, out of ${attempts} attempts.`;
       rows = evidence.filter(r => CERT_STATUSES.includes(r.status));
     }
   } else if (key === 'Pattern') {
-    meaning = 'Whether one specific problem, in one specific apartment, has come back — not just any two unrelated violations.';
-    if (profile.pattern === 'Isolated' || profile.pattern === 'No real defects' || !profile.top_sig_ordernumber) {
-      observed = profile.pattern === 'Widespread'
-        ? `No recurring signature was found among these violations — every citation traces to a different issue. But there are ${profile.real_defect_count} separate real defects on record, more than the large majority of buildings with no recurring pattern.`
-        : 'No recurring signature was found among these violations — every citation traces to a different issue.';
-      rows = [];
-    } else {
+    meaning = 'Whether the same specific defect has been cited over and over across the years — not two unrelated violations, and not one inspection that flagged the same problem in several rooms at once.';
+    // Mirror generate_narrative(): only Chronic/Persistent make a recurrence
+    // claim. A "signature" of notices all issued the same day (one inspection,
+    // several locations) is not recurrence and must not read as "recurred N times".
+    const hasVisitDetail = profile.n_defect_visits >= 3 && profile.defect_visit_span_years >= 0.5;
+    if (profile.pattern === 'Chronic' || profile.pattern === 'Persistent') {
       const where = profile.top_sig_breadth >= 2 ? `across ${profile.top_sig_breadth} different apartments`
         : profile.top_sig_breadth === 1 ? 'in the same apartment' : 'in the building’s common areas';
-      observed = `The same defect has recurred ${profile.top_sig_notices} times over ${profile.top_sig_span_years.toFixed(1)} years, ${where}.`;
-      const sigRecords = records.filter(v => v.ordernumber === profile.top_sig_ordernumber);
-      rows = buildEvidenceFromRecords(sigRecords);
+      const what = profile.top_sig_coherent
+        ? 'The same specific problem'
+        : 'The same administrative code — covering several different underlying defects —';
+      observed = `${what} has recurred ${profile.top_sig_notices} times over ${profile.top_sig_span_years.toFixed(1)} years, ${where}.`;
+      rows = buildEvidenceFromRecords(records.filter(v => v.ordernumber === profile.top_sig_ordernumber));
+    } else if (profile.pattern === 'Widespread') {
+      observed = hasVisitDetail
+        ? `No single defect here has repeated, but different problems have been cited across ${profile.n_defect_visits} separate inspections over ${profile.defect_visit_span_years.toFixed(1)} years — more than most buildings ever see.`
+        : `No single defect here has repeated, but ${profile.real_defect_count} separate real defects are on record — more than most buildings ever see.`;
+      rows = [];
+    } else {
+      observed = hasVisitDetail
+        ? `No single defect here has repeated, though different problems have been cited across ${profile.n_defect_visits} separate inspections over ${profile.defect_visit_span_years.toFixed(1)} years.`
+        : 'No single defect here has repeated — every citation traces to a different issue.';
+      rows = [];
     }
   } else if (key === 'Backlog age') {
     meaning = 'Age of the single oldest missed repair deadline still on record.';
@@ -1350,7 +1367,7 @@ function buildDimDetail(key, profile, evidence, records) {
 }
 
 function renderDims(profile, evidence, records) {
-  const engagementValue = profile.engagement === 'Untested' ? 'No record yet' : profile.engagement;
+  const engagementValue = profile.engagement;
   const dims = [
     ['Scale', 'How much is there?', `${profile.active_count} active violation${profile.active_count !== 1 ? 's' : ''}`],
     ['Recency', 'Is it happening now?', profile.recency],
